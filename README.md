@@ -1,21 +1,28 @@
 # CampusAI
 
-CampusAI 是一个面向大学生的 AI 学习资料管理与复习辅助平台。项目围绕“课程资料上传、文本提取、摘要生成、资料搜索和复习卡片生成”构建了一条完整、可测试的后端流程。
+CampusAI 是一个帮助大学生把课程资料快速整理成摘要、复习卡片和可搜索知识库的 AI 学习助手。
 
-CampusAI is a FastAPI-based AI study assistant for university students, focused on organizing learning materials and turning them into searchable summaries and review cards.
+CampusAI is a FastAPI-based study assistant that turns course materials into searchable summaries and review cards.
 
-> 重要说明：当前 V0.1 使用本地规则实现的 mock AI 摘要和 mock 学习卡片生成，不调用真实外部大模型 API，也不依赖 API Key。
+> 当前版本使用本地规则实现的 mock AI 摘要和 mock 学习卡片生成，不调用真实外部大模型 API，也不依赖 API Key。
+
+## 产品主流程
+
+CampusAI V0.3 将前端体验收束为一条明确的学习闭环：
+
+```text
+选择课程 → 上传资料 → 生成学习包 → 搜索复习
+```
+
+学生不需要理解文本提取、摘要接口或卡片接口等技术概念。上传 TXT 或 MD 资料后，页面会显示“已解析多少字”；选中资料后点击“生成学习包”，系统会依次生成摘要和复习卡片；最后可在当前课程资料中搜索知识点。
 
 ## 项目状态
 
-- 当前版本：`V0.2 前端体验完善阶段`
-- V0.1 后端发布范围已完成，V0.2 正在完善原生前端演示体验
-- 当前进度：V0.2 前端核心演示流程已打通，持续完善交互体验
-- 项目定位：面向大学生的 AI 学习资料管理与复习辅助平台
-- 后端框架：FastAPI
-- 数据存储：本地 JSON 文件
-- 测试方式：基于真实 HTTP 请求的 `unittest` 集成测试
-- 前端：原生 HTML、CSS、JavaScript，无构建工具和外部 CDN
+- 当前版本：`V0.3 产品主流程重构阶段`
+- 后端：FastAPI、Pydantic、本地 JSON 持久化、unittest 集成测试
+- 前端：原生 HTML、CSS、JavaScript，由 FastAPI 直接托管
+- 当前 AI：本地 mock AI 原型，不是已经接入真实 LLM 的产品
+- 不使用 Vue、React、构建工具或外部 CDN
 
 推荐 GitHub 仓库描述：
 
@@ -23,68 +30,47 @@ CampusAI is a FastAPI-based AI study assistant for university students, focused 
 CampusAI：面向大学生的 AI 学习资料管理与复习辅助平台 | FastAPI-based AI study assistant for students
 ```
 
-## 技术栈
+## 核心能力
 
-- Python 3
-- FastAPI、Uvicorn
-- Pydantic
-- `python-multipart` 文件上传
-- 本地 JSON 持久化
-- Python 标准库 `unittest`
-
-## 核心功能
-
-- 课程列表和课程详情查询
-- 课程资料列表和 JSON 资料创建
-- 上传 `.pdf`、`.ppt`、`.pptx`、`.doc`、`.docx`、`.txt`、`.md` 文件
-- 按课程保存上传文件到 `backend/app/uploads/course_{course_id}/`
-- 自动提取 `.txt`、`.md` 文本，保存 `text_preview`、`text_length`、`extracted`
+- 选择课程并查看课程资料
+- 上传 `.txt`、`.md` 等课程资料，文件和资料记录写回本地 JSON
+- 自动提取 TXT、MD 的正文，展示文本预览与解析字数
 - 生成并持久化 mock AI 摘要
-- 按标题、文件名、资料摘要、提取文本和 AI 摘要搜索资料
-- 生成并持久化学习复习卡片
-- 通过原生前端页面完成课程选择、资料上传、搜索、摘要和卡片操作
-- 新增资料和处理结果写回 JSON，服务重启后仍然保留
+- 生成并持久化 mock 学习复习卡片
+- 以标题、文件名、资料说明、正文预览和 AI 摘要搜索知识点
+- 服务重启后仍可读取资料、摘要和卡片结果
 
 ## API 概览
 
 | 功能 | API | 说明 |
 | --- | --- | --- |
-| 健康检查 | `GET /health` | 检查后端是否正常运行 |
-| 课程列表 | `GET /api/courses` | 获取全部课程 |
-| 课程资料 | `GET /api/courses/{course_id}/materials` | 获取指定课程的资料 |
+| 课程列表 | `GET /api/courses` | 获取课程 |
+| 课程资料 | `GET /api/courses/{course_id}/materials` | 获取一门课的资料 |
 | 文件上传 | `POST /api/courses/{course_id}/materials/upload` | 上传并登记课程资料 |
-| mock 摘要 | `POST /api/materials/{material_id}/summary` | 生成并保存本地 mock 摘要 |
+| mock 摘要 | `POST /api/materials/{material_id}/summary` | 生成并保存本地摘要 |
 | 资料搜索 | `GET /api/materials/search?q={keyword}&course_id={optional}` | 搜索资料，不修改 JSON |
 | 学习卡片 | `POST /api/materials/{material_id}/cards` | 生成并保存 mock 复习卡片 |
 
-完整接口说明见 [API 总览](docs/API_OVERVIEW.md)。
+完整说明见 [API 总览](docs/API_OVERVIEW.md)。
 
 ## 项目结构
 
 ```text
 campus-ai/
 ├── backend/
-│   ├── main.py                     # FastAPI 应用入口
+│   ├── main.py
 │   ├── app/
-│   │   ├── api/                    # 课程、资料和处理接口
-│   │   ├── schemas/                # Pydantic 请求与响应模型
-│   │   ├── services/               # 持久化、提取、摘要和卡片服务
-│   │   ├── data/courses.json       # 默认示例课程与资料数据
-│   │   └── uploads/                # 运行时上传目录，不提交真实用户文件
-│   └── tests/test_courses_api.py   # HTTP 集成测试
+│   │   ├── api/                 # 课程、资料和处理接口
+│   │   ├── schemas/             # Pydantic 模型
+│   │   ├── services/            # 持久化、提取、摘要、卡片服务
+│   │   └── data/courses.json    # 默认演示数据
+│   └── tests/test_courses_api.py
 ├── frontend/
-│   ├── index.html                # 前端首页
-│   ├── styles.css                # 页面样式
-│   └── app.js                    # 前端 API 交互逻辑
+│   ├── index.html
+│   ├── styles.css
+│   └── app.js
 ├── docs/
-│   ├── API_OVERVIEW.md             # API 中文总览
-│   ├── DEMO_SCRIPT.md              # 比赛演示讲稿
-│   ├── DEVELOPMENT_LOG.md          # 分阶段开发日志
-│   ├── V0.1_ACCEPTANCE.md          # V0.1 最终验收清单
-│   ├── DEMO_DATA.md                # 默认演示数据说明
-│   └── DEMO_CHECKLIST.md           # 演示前检查清单
-├── scripts/
-│   └── start_dev.sh                # WSL/Linux 一键启动脚本
+├── scripts/start_dev.sh
 └── requirements.txt
 ```
 
@@ -92,15 +78,16 @@ campus-ai/
 
 在项目根目录执行：
 
-~~~bash
+```bash
 bash scripts/start_dev.sh
-~~~
+```
 
-脚本会检查项目目录、虚拟环境和 FastAPI/Uvicorn 依赖，不会自动安装依赖。启动成功后访问 http://127.0.0.1:8000。
+启动后打开：
 
-## 本地运行
+- 前端学习工作台：[http://127.0.0.1:8000](http://127.0.0.1:8000)
+- FastAPI API 文档：[http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
 
-在项目根目录执行：
+也可以手动启动：
 
 ```bash
 python3 -m venv .venv
@@ -109,32 +96,15 @@ pip install -r requirements.txt
 uvicorn backend.main:app --reload
 ```
 
-启动后打开 CampusAI 前端首页：
+## 前端演示
 
-[http://127.0.0.1:8000](http://127.0.0.1:8000)
+1. 打开首页，从左侧选择一门课程。
+2. 查看当前课程下的学习资料；点击资料卡片进入学习包详情。
+3. 选择 TXT 或 MD 文件，上传到当前课程。
+4. 点击“生成学习包”，等待摘要和复习卡片生成。
+5. 在“搜索知识点”中输入 `cache`、`gradient` 或 `linked list`，点击结果查看资料详情。
 
-
-### 前端演示流程
-
-启动服务后，优先通过前端首页完成比赛演示：
-
-1. 访问 `http://127.0.0.1:8000`，选择课程并查看资料。
-2. 在已选课程下上传 `.txt` 或 `.md`，上传完成后页面会自动选中新资料。
-3. 在资料详情中查看 `extracted`、`text_length`、`text_preview` 和 `summary`。
-4. 使用“生成摘要”和“生成学习卡片”按钮，查看持久化结果。
-5. 使用搜索框检索资料，点击搜索结果可回到对应资料详情；点击“返回课程资料”恢复完整列表。
-
-页面由 FastAPI 直接托管，使用原生 HTML、CSS 和 JavaScript，无需构建步骤、外部 CDN 或额外前端服务。`/docs` 保留用于查看和调试 API。
-FastAPI 交互式 API 文档仍然可以访问：
-
-[http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
-
-默认数据文件为 `backend/app/data/courses.json`。测试或本地隔离运行时，可以通过环境变量切换数据文件和上传目录：
-
-```bash
-CAMPUSAI_COURSE_DATA_FILE=/path/to/courses.json
-CAMPUSAI_UPLOAD_DIR=/path/to/uploads
-```
+页面没有额外前端服务和构建步骤。文本提取、摘要和卡片均使用既有后端 API；`/docs` 保留用于查看接口。
 
 ## 运行测试
 
@@ -143,48 +113,29 @@ wsl -d Ubuntu --cd /home/qxrrr/projects/campus-ai \
 .venv/bin/python -m unittest backend.tests.test_courses_api
 ```
 
-测试覆盖课程与资料接口、JSON 持久化、文件上传、文本提取、mock 摘要、资料搜索和学习卡片生成。
+测试覆盖课程与资料、JSON 持久化、文件上传、文本提取、mock 摘要、搜索和学习卡片接口。
 
-## 当前 mock AI 能力
+## 当前 mock AI 能力与限制
 
-当前阶段不接入真实外部大模型，所有 AI 相关能力都使用本地规则服务完成：
+- mock 摘要根据已提取文本生成简短摘要。
+- mock 卡片优先使用 AI 摘要，其次使用正文预览和资料说明。
+- 重复生成会更新原资料，不会无限新增重复卡片。
+- 尚未接入真实 LLM、RAG、向量数据库、数据库或用户登录。
+- PDF、PPT、Word 可上传，但当前只自动提取 TXT、MD 的正文。
 
-- mock 摘要根据已提取文本生成简短摘要，并保存 `ai_summary`、`summary_method`、`summary_updated_at`。
-- mock 卡片优先使用 `ai_summary`，其次使用 `text_preview`，最后使用资料原始 `summary`。
-- 重复生成摘要或卡片时更新原资料，不创建重复资料。
-- 摘要和卡片服务位于 `backend/app/services/`，后续可以在不改变 API 的情况下替换为真实 LLM 服务。
+## 演示与文档
 
-## 比赛展示亮点
-
-- 从课程资料上传到复习卡片生成，形成完整后端闭环
-- 数据写回 JSON，服务重启后仍然可读
-- 服务层职责清晰，便于后续接入真实 AI 能力
-- 使用真实 HTTP 集成测试验证，而不是只验证孤立函数
-- 不依赖 API Key 和外部网络，现场演示稳定、可复现
-- 文档、开发日志和 Demo 脚本完整，适合比赛评审和简历展示
+- [比赛 Demo 脚本](docs/DEMO_SCRIPT.md)
+- [演示数据说明](docs/DEMO_DATA.md)
+- [演示前检查清单](docs/DEMO_CHECKLIST.md)
+- [API 总览](docs/API_OVERVIEW.md)
+- [分阶段开发日志](docs/DEVELOPMENT_LOG.md)
+- [V0.1 最终验收清单](docs/V0.1_ACCEPTANCE.md)
 
 ## 后续规划
 
-- 接入真实 LLM，替换当前 mock 摘要和卡片服务
-- 增加 Embedding、RAG 检索和向量数据库
-- 支持 PDF、PowerPoint、Word 的正文提取
-- 继续完善学生端前端页面和课程复习视图
-- 增加用户认证、资料归属和协作能力
-- 将 JSON 存储升级为数据库，并支持异步处理
-
-## 演示数据
-
-默认数据包含三门课程、每门两条资料，并预置文本提取、mock 摘要和学习卡片字段，适合打开首页后直接演示。详细关键词和推荐流程见 [演示数据说明](docs/DEMO_DATA.md)。
-
-## 演示检查清单
-
-比赛或录制前可按 [演示前检查清单](docs/DEMO_CHECKLIST.md) 逐项确认启动、页面、接口和备用方案。
-
-## 项目文档
-
-- [分阶段开发日志](docs/DEVELOPMENT_LOG.md)
-- [API 总览](docs/API_OVERVIEW.md)
-- [比赛 Demo 脚本](docs/DEMO_SCRIPT.md)
-- [V0.1 最终验收清单](docs/V0.1_ACCEPTANCE.md)
-- [演示数据说明](docs/DEMO_DATA.md)
-- [演示前检查清单](docs/DEMO_CHECKLIST.md)
+- 使用真实 LLM 替换 mock AI 服务
+- 接入 Embedding、RAG 和向量数据库
+- 支持 PDF、PowerPoint、Word 正文提取
+- 增加数据库、用户资料归属和协作能力
+- 继续完善学生端复习体验

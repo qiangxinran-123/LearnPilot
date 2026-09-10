@@ -1,118 +1,17 @@
 <!doctype html>
-<html lang="zh-CN">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>CampusAI | 学习资料管理与复习辅助</title>
-  <link rel="stylesheet" href="/styles.css">
-</head>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>CampusAI | 学习工作台</title><link rel="icon" href="data:,"><link rel="stylesheet" href="/styles.css"></head>
 <body>
-  <header class="topbar">
-    <div class="brand-block">
-      <span class="brand-mark">CA</span>
-      <div>
-        <h1>CampusAI</h1>
-        <p>面向大学生的 AI 学习资料管理与复习辅助平台</p>
-      </div>
-    </div>
-    <a class="docs-link" href="/docs" target="_blank" rel="noreferrer">打开 API 文档 <span aria-hidden="true">↗</span></a>
-  </header>
-
-  <main class="app-shell">
-    <aside class="sidebar panel">
-      <div class="section-heading">
-        <div>
-          <span class="eyebrow">COURSES</span>
-          <h2>我的课程</h2>
-        </div>
-        <span id="course-count" class="count-badge">0</span>
-      </div>
-      <div id="course-list" class="course-list" aria-live="polite">
-        <p class="empty-state">正在加载课程...</p>
-      </div>
-    </aside>
-
-    <section class="content-column">
-      <div class="workspace-heading">
-        <div>
-          <span class="eyebrow">LEARNING WORKSPACE</span>
-          <h2 id="course-title">请选择一门课程</h2>
-          <p id="course-description" class="muted">课程资料和复习工具会显示在这里。</p>
-        </div>
-        <div id="status-pill" class="status-pill" data-tone="neutral">准备就绪</div>
-      </div>
-
-      <section class="tools-grid" aria-label="资料工具">
-        <form id="upload-form" class="tool-panel">
-          <div class="tool-heading">
-            <div class="tool-icon upload-icon">↑</div>
-            <div>
-              <h3>上传学习资料</h3>
-              <p>支持 TXT、Markdown 文件</p>
-            </div>
-          </div>
-          <p id="upload-target" class="upload-target">请先选择课程</p>
-          <label class="file-picker">
-            <span id="file-label">选择文件</span>
-            <input id="file-input" type="file" accept=".txt,.md,text/plain,text/markdown" required disabled>
-          </label>
-          <button id="upload-submit" class="primary-button" type="submit" disabled>上传并提取文本</button>
-        </form>
-
-        <form id="search-form" class="tool-panel">
-          <div class="tool-heading">
-            <div class="tool-icon search-icon">⌕</div>
-            <div>
-              <h3>搜索资料</h3>
-              <p>搜索标题、正文和摘要</p>
-            </div>
-          </div>
-          <label class="search-field">
-            <span class="sr-only">搜索关键词</span>
-            <input id="search-input" type="search" placeholder="输入关键词，例如 cache" autocomplete="off">
-          </label>
-          <button class="secondary-button" type="submit">搜索当前课程</button>
-        </form>
-      </section>
-
-      <section class="workspace-grid">
-        <section class="materials-section panel">
-          <div class="section-heading materials-heading">
-            <div>
-              <span class="eyebrow">MATERIALS</span>
-              <h2>课程资料</h2>
-            </div>
-            <div class="materials-heading-actions">
-              <span id="search-result-count" class="result-count">共 0 份</span>
-              <button id="clear-search" class="text-button" type="button" hidden>返回课程资料</button>
-            </div>
-          </div>
-          <div id="materials-list" class="materials-list" aria-live="polite">
-            <p class="empty-state">请选择课程查看资料。</p>
-          </div>
-        </section>
-
-        <aside id="material-detail" class="detail-panel panel is-empty" aria-live="polite">
-          <div class="section-heading detail-heading">
-            <div>
-              <span class="eyebrow">MATERIAL DETAIL</span>
-              <h2>资料详情</h2>
-            </div>
-          </div>
-          <div id="detail-content" class="detail-content">
-            <p class="detail-empty-title">请选择一份资料</p>
-            <p class="muted">资料的正文、摘要和学习卡片会显示在这里。</p>
-          </div>
-          <div id="detail-actions" class="detail-actions" hidden>
-            <button id="detail-summary" class="primary-button" type="button">生成摘要</button>
-            <button id="detail-cards" class="secondary-button" type="button">生成学习卡片</button>
-          </div>
-        </aside>
-      </section>
-    </section>
-  </main>
-
-  <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script src="/app.js" defer></script>
-</body>
-</html>
+<header class="topbar"><a class="brand" href="/" aria-label="CampusAI 首页"><span>CA</span>CampusAI</a><small>当前为 mock AI 原型</small><a href="/docs" target="_blank" rel="noreferrer">查看 API 文档</a></header>
+<main class="app-shell">
+<section class="intro"><div><h1>把课程资料变成摘要、复习卡片和可搜索知识库</h1><p>选择一门课程，上传资料后生成学习包，再从自己的资料中搜索知识点复习。</p></div><div id="status-message" class="status" role="status">准备开始学习</div></section>
+<nav class="workflow" aria-label="学习流程"><div id="step-course" class="step active"><b>1</b><span><strong>选择课程</strong><small>确定学习范围</small></span></div><i></i><div id="step-upload" class="step"><b>2</b><span><strong>上传资料</strong><small>添加 TXT 或 MD</small></span></div><i></i><div id="step-pack" class="step"><b>3</b><span><strong>生成学习包</strong><small>摘要与复习卡片</small></span></div><i></i><div id="step-search" class="step"><b>4</b><span><strong>搜索复习</strong><small>回到知识点</small></span></div></nav>
+<section class="search"><div><em>Step 4</em><h2>搜索知识点</h2></div><form id="search-form"><label class="sr-only" for="search-input">搜索当前课程资料</label><input id="search-input" type="search" placeholder="搜索 cache、gradient、linked list 等知识点"><button class="secondary" type="submit">搜索复习</button><button id="clear-search" class="text" type="button" hidden>返回课程资料</button></form><p id="search-result-count">选择课程后可搜索已上传资料</p></section>
+<section class="workbench">
+<aside class="panel courses"><div class="heading"><div><em>Step 1</em><h2>选择课程</h2></div><b id="course-count" class="count">0</b></div><p>从一门课程开始整理资料。</p><div id="course-list"><p class="empty">正在加载课程...</p></div></aside>
+<section class="materials">
+<section class="panel current-course"><div><em>当前课程</em><h2 id="course-title">请选择一门课程</h2><p id="course-description">课程资料会显示在这里。</p></div><b id="course-material-count" class="count">0 份资料</b></section>
+<form id="upload-form" class="panel upload"><div><em>Step 2</em><h2>上传课程资料</h2></div><p id="upload-target">请先选择课程</p><label for="file-input"><span id="file-label">选择 .txt 或 .md 文件</span><input id="file-input" type="file" accept=".txt,.md,text/plain,text/markdown" disabled></label><button id="upload-submit" class="primary" type="submit" disabled>上传资料</button></form>
+<section class="panel material-list"><div class="heading"><div><em>课程资料</em><h2>学习资料</h2></div><b id="materials-count" class="count">0 份</b></div><div id="materials-list"><p class="empty">请选择课程查看资料。</p></div></section>
+</section>
+<aside id="material-detail" class="panel detail empty-detail" aria-live="polite"><div class="heading detail-heading"><div><em>Step 3</em><h2>学习包</h2></div></div><div id="detail-content"><h3>选择一份课程资料</h3><p>在这里生成摘要和复习卡片，开始整理本次学习内容。</p></div><div id="detail-actions" class="actions" hidden><button id="generate-pack" class="primary pack" type="button">生成学习包</button><div><button id="detail-summary" class="quiet" type="button">只生成摘要</button><button id="detail-cards" class="quiet" type="button">只生成卡片</button></div></div></aside>
+</section></main><div id="toast" class="toast" role="status"></div><script src="/app.js" defer></script></body></html>
