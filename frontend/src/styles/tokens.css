@@ -1,0 +1,44 @@
+:root {
+  --lp-canvas: #f6f8fc;
+  --lp-surface: #ffffff;
+  --lp-surface-subtle: #f1f5f9;
+  --lp-primary: #1f5fae;
+  --lp-primary-hover: #174d90;
+  --lp-primary-soft: #eaf2fc;
+  --lp-ink: #152238;
+  --lp-text: #26364d;
+  --lp-text-secondary: #617087;
+  --lp-text-tertiary: #8290a3;
+  --lp-border: #dbe3ee;
+  --lp-border-strong: #c6d2e1;
+  --lp-danger: #b64242;
+  --lp-danger-soft: #fff1f1;
+  --lp-shadow-sm: 0 1px 2px rgb(20 35 56 / 6%);
+  --lp-shadow-md: 0 10px 28px rgb(20 35 56 / 8%);
+  --lp-radius-sm: 6px;
+  --lp-radius-md: 10px;
+  --lp-radius-lg: 14px;
+  --lp-space-1: 4px;
+  --lp-space-2: 8px;
+  --lp-space-3: 12px;
+  --lp-space-4: 16px;
+  --lp-space-5: 24px;
+  --lp-space-6: 32px;
+  --lp-space-7: 40px;
+  --lp-space-8: 48px;
+  --lp-transition-fast: 150ms ease;
+
+  --el-color-primary: var(--lp-primary);
+  --el-color-primary-light-3: #6694cc;
+  --el-color-primary-light-5: #8fafd9;
+  --el-color-primary-light-7: #bed3ec;
+  --el-color-primary-light-9: var(--lp-primary-soft);
+  --el-border-radius-base: var(--lp-radius-sm);
+  --el-border-color: var(--lp-border);
+  --el-text-color-primary: var(--lp-ink);
+  --el-text-color-regular: var(--lp-text);
+  --el-text-color-secondary: var(--lp-text-secondary);
+  --el-font-family:
+    ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei',
+    'Noto Sans CJK SC', sans-serif;
+}

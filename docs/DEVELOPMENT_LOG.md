@@ -1,6 +1,22 @@
-# CampusAI 分阶段开发日志
+# LearnPilot / CampusAI 分阶段开发日志
 
-本日志记录 CampusAI V0.1 从最小 FastAPI 后端逐步发展为“资料上传、文本处理、搜索和复习辅助”原型的过程。每个阶段都以可运行接口和可验证结果为边界，便于比赛评审了解项目如何持续迭代。
+本日志同时记录当前 LearnPilot V1 里程碑和早期 CampusAI V0.1 原型演进。当前运行基线是 M3-A；下方 CampusAI V0.1 阶段表仅用于历史追溯。
+
+## LearnPilot V1 里程碑
+
+| 里程碑 | 目标 | 已实现边界 | 验证与状态 |
+| --- | --- | --- | --- |
+| M0 | 迁移审计 | 盘点原型资产、能力矩阵和技术债，明确 JSON/原生前端迁移范围。 | 审计文档已保存于 `docs/migration/`。 |
+| M1-A | 关系型数据基础 | 引入 SQLAlchemy、Alembic、owner 归属、课程/资料表、显式旧 JSON 导入器和 SQLite 真实迁移测试。 | 迁移与回归测试通过；见 [M1-A 数据基础](architecture/M1A_DATA_FOUNDATION.md)。 |
+| M1-B | Vue 前端架构 | 将活动前端迁移至 Vue 3 + TypeScript + Vite，提供五个一级路由、真实课程列表和诚实空状态。 | 类型检查、lint、测试和生产构建记录见 [M1-B 报告](migration/M1B_FRONTEND_REPORT.md)。 |
+| M2 | 课程与资料闭环 | 支持课程 CRUD、TXT/MD/PDF/DOCX 上传解析、完整正文持久化、结构化摘要、学习卡片和单资料问答。 | SQLite、后端、前端及浏览器流程已验证；真实 provider 和 MySQL 8 尚未 smoke test。 |
+| M3-A | 知识模型基础 | 增加课程知识节点、关系、资料来源、数据库约束、仓储/服务层和两个只读 API。 | 后端 `93/93`、Ruff lint/format 通过；见 [M3-A 报告](migration/M3A_IMPLEMENTATION_REPORT.md)。 |
+
+M3-A 不执行知识抽取、语义去重、层级/先修推断或前端图谱展示，也不引入学生掌握度。Course Model 与未来 Student Model 保持分离。
+
+## CampusAI V0.1 历史原型阶段
+
+CampusAI V0.1 从最小 FastAPI 后端逐步发展为“资料上传、文本处理、搜索和复习辅助”JSON 原型。每个阶段以可运行接口和可验证结果为边界。
 
 | 阶段 | 阶段目标 | 完成内容 | 验收方式 | 项目价值 |
 | --- | --- | --- | --- | --- |
@@ -18,7 +34,7 @@
 | 阶段 13 | 项目文档与比赛材料 | 完善 README、API 总览、开发日志和 Demo 讲稿。 | 文档与已测试 API 能力一致。 | 便于比赛评审、现场演示和简历展示。 |
 | 阶段 14 | 最终验收与发布准备 | 检查仓库卫生、补充 `.gitignore`、核对文档并记录验收清单。 | 测试通过，仓库不包含运行时缓存和真实上传文件。 | 将 V0.1 整理为可交付、可展示的版本。 |
 
-## 验收方式说明
+## V0.1 验收方式说明
 
 测试使用临时 JSON 数据文件和临时上传目录启动真实 Uvicorn 服务，再通过 HTTP 请求验证公开 API。这种方式既验证接口行为，也验证持久化和服务重启场景，不会污染 `backend/app/data/courses.json`。
 
@@ -29,4 +45,4 @@ wsl -d Ubuntu --cd /home/qxrrr/projects/campus-ai \
 
 ## 版本定位
 
-CampusAI V0.1 是后端导向的比赛原型。当前摘要和学习卡片属于透明、可测试的本地 mock AI 能力，后续将演进为真实 LLM、RAG 和向量数据库方案。
+CampusAI V0.1 是后端导向的比赛原型，其摘要和卡片使用本地 mock 规则。当前 LearnPilot V1 已迁移到关系数据库、Vue 前端和可配置的模型 provider，并在 M3-A 建立课程知识模型基础；RAG、自动知识抽取、学生模型和推荐仍属于后续里程碑。

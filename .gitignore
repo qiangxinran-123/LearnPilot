@@ -4,8 +4,17 @@ __pycache__/
 .pytest_cache/
 .env
 .env.*
+!.env.example
 .vscode/
 
 # Runtime uploads are local user data and must not be committed.
 backend/app/uploads/*
 !backend/app/uploads/.gitkeep
+
+node_modules/
+dist/
+build/
+coverage/
+
+# Local M2 SQLite Demo state.
+learnpilot-demo.sqlite3

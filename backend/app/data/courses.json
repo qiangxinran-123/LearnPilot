@@ -161,38 +161,38 @@
         "text_preview": "A classification model assigns labels to examples using a decision boundary. Logistic regression produces probabilities, while precision and recall describe different aspects of prediction quality.",
         "text_length": 197,
         "extracted": true,
-        "ai_summary": "Mock summary: Classification predicts labels with a decision boundary. Logistic regression outputs probabilities, while precision and recall measure prediction quality from different perspectives.",
+        "ai_summary": "Mock summary: A classification model assigns labels to examples using a decision boundary. Logistic regression produces probabilities, while precision and recall describe dif",
         "summary_generated": true,
         "summary_method": "mock",
-        "summary_updated_at": "2026-09-01T18:15:00+08:00",
+        "summary_updated_at": "2026-09-10T11:41:58.371026+00:00",
         "cards": [
           {
             "id": 20201,
             "question": "What is the core topic of this material?",
-            "answer": "A classification model assigns labels to examples using a decision boundary.",
+            "answer": "Mock summary: A classification model assigns labels to examples using a decision boundary.",
             "source_material_id": 202,
             "card_type": "concept",
-            "created_at": "2026-09-01T18:15:00+08:00"
+            "created_at": "2026-09-10T11:41:58.376459+00:00"
           },
           {
             "id": 20202,
             "question": "Which key idea should you review from this material?",
-            "answer": "Logistic regression produces probabilities for classification decisions.",
+            "answer": "Logistic regression produces probabilities, while precision and recall describe dif",
             "source_material_id": 202,
             "card_type": "review",
-            "created_at": "2026-09-01T18:15:00+08:00"
+            "created_at": "2026-09-10T11:41:58.376459+00:00"
           },
           {
             "id": 20203,
             "question": "How would you explain this material in one sentence?",
-            "answer": "Precision and recall describe different aspects of prediction quality.",
+            "answer": "Mock summary: A classification model assigns labels to examples using a decision boundary.",
             "source_material_id": 202,
             "card_type": "review",
-            "created_at": "2026-09-01T18:15:00+08:00"
+            "created_at": "2026-09-10T11:41:58.376459+00:00"
           }
         ],
         "cards_generated": true,
-        "cards_generated_at": "2026-09-01T18:15:00+08:00",
+        "cards_generated_at": "2026-09-10T11:41:58.376459+00:00",
         "cards_method": "mock"
       }
     ],

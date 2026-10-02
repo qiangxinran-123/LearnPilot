@@ -1,141 +1,191 @@
-# CampusAI
+# LearnPilot（CampusAI）
 
-CampusAI 是一个帮助大学生把课程资料快速整理成摘要、复习卡片和可搜索知识库的 AI 学习助手。
+LearnPilot 是 CampusAI 原型的持续演进版本：面向大学生管理课程资料、提取可追溯正文，并将资料转化为摘要、学习卡片、问答结果和课程知识模型。
 
-CampusAI is a FastAPI-based study assistant that turns course materials into searchable summaries and review cards.
+当前代码基线为 **LearnPilot V1 / M3-A Knowledge Model Foundation**。旧版 CampusAI V0.x 的 JSON 原型、原生前端和比赛材料仍保留用于追溯，但不再代表当前运行架构。
 
-> 当前版本使用本地规则实现的 mock AI 摘要和 mock 学习卡片生成，不调用真实外部大模型 API，也不依赖 API Key。
+## 当前能力
 
-## 产品主流程
+- 使用 Vue 3、TypeScript、Vite、Pinia 和 Element Plus 提供首页、课程、诊断、学习、进展五个一级页面。
+- 通过 FastAPI 提供课程 CRUD、资料上传/删除/搜索、分页正文、结构化摘要、学习卡片和单资料问答接口。
+- 支持 TXT、MD、PDF、DOCX 资料；默认上传上限为 20 MiB。PPT/PPTX 当前未启用。
+- 使用 SQLAlchemy 与 Alembic 持久化课程、资料、解析正文和 AI 产物；本地演示使用 SQLite，部署可配置 MySQL 8。
+- AI 默认使用显式配置的 provider；`LLM_MODE=mock` 只用于本地验收，不会作为生产环境静默回退。
+- M3-A 增加课程知识节点、关系和来源的数据模型、完整性约束、仓储/服务层以及只读 API。
 
-CampusAI V0.3 将前端体验收束为一条明确的学习闭环：
+M3-A 只建立课程知识模型基础，不会自动抽取知识点，也不包含语义去重、层级/先修关系推断、学生掌握度、推荐或前端知识图谱。
 
-```text
-选择课程 → 上传资料 → 生成学习包 → 搜索复习
+## 技术栈
+
+| 层次 | 技术 |
+| --- | --- |
+| 前端 | Vue 3、TypeScript、Vite、Vue Router、Pinia、Element Plus、Axios |
+| 后端 | FastAPI、Pydantic、SQLAlchemy、Alembic |
+| 数据库 | SQLite（本地演示）、MySQL 8（目标部署） |
+| 文档解析 | TXT、Markdown、PDF、DOCX |
+| 质量检查 | pytest、Ruff、Vitest、vue-tsc、ESLint、Prettier |
+
+## 快速启动
+
+### 1. 后端
+
+项目要求 Python 3.14 或更高版本。在仓库根目录执行：
+
+```bash
+python3.14 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
+cp -n .env.example .env
+.venv/bin/alembic upgrade head
+.venv/bin/python -m uvicorn backend.main:app --reload
 ```
 
-学生不需要理解文本提取、摘要接口或卡片接口等技术概念。上传 TXT 或 MD 资料后，页面会显示“已解析多少字”；选中资料后点击“生成学习包”，系统会依次生成摘要和复习卡片；最后可在当前课程资料中搜索知识点。
+`.env.example` 提供显式的本地 SQLite 地址 `sqlite+pysqlite:///./learnpilot-demo.sqlite3`。`cp -n` 不会覆盖已有的私有 `.env`；真实数据库凭据和模型密钥只应写入被 Git 忽略的 `.env`。
 
-## 项目状态
+启动后可访问：
 
-- 当前版本：`V0.3 产品主流程重构阶段`
-- 后端：FastAPI、Pydantic、本地 JSON 持久化、unittest 集成测试
-- 前端：原生 HTML、CSS、JavaScript，由 FastAPI 直接托管
-- 当前 AI：本地 mock AI 原型，不是已经接入真实 LLM 的产品
-- 不使用 Vue、React、构建工具或外部 CDN
+- 应用/API 服务：<http://127.0.0.1:8000>
+- Swagger 文档：<http://127.0.0.1:8000/docs>
+- 健康检查：<http://127.0.0.1:8000/health>
 
-推荐 GitHub 仓库描述：
+### 2. 前端开发服务器
 
-```text
-CampusAI：面向大学生的 AI 学习资料管理与复习辅助平台 | FastAPI-based AI study assistant for students
+项目支持 Node.js `>=22.12.0 <25`、npm `>=10`：
+
+```bash
+cd frontend
+npm ci
+npm run dev
 ```
 
-## 核心能力
+Vite 会将 `/api/*` 和 `/health` 代理到 `http://127.0.0.1:8000`。运行 `npm run build` 后，FastAPI 会托管 `frontend/dist/` 并提供 SPA history fallback，同时保留 API 与健康检查路由。
 
-- 选择课程并查看课程资料
-- 上传 `.txt`、`.md` 等课程资料，文件和资料记录写回本地 JSON
-- 自动提取 TXT、MD 的正文，展示文本预览与解析字数
-- 生成并持久化 mock AI 摘要
-- 生成并持久化 mock 学习复习卡片
-- 以标题、文件名、资料说明、正文预览和 AI 摘要搜索知识点
-- 服务重启后仍可读取资料、摘要和卡片结果
+## AI 配置
+
+`.env.example` 默认使用 `LLM_MODE=provider`，但不包含密钥。真实模型调用至少需要在私有 `.env` 中配置：
+
+```dotenv
+LLM_MODE=provider
+LLM_API_KEY=...
+LLM_BASE_URL=...
+LLM_MODEL=...
+```
+
+未完成 provider 配置时，AI 接口会返回 `AI_NOT_CONFIGURED`。仅做本地功能验收时可以显式设置 `LLM_MODE=mock`；响应会保留 mock 来源，不代表真实模型已经接通。摘要输入上限默认是 200000 字符，超过限制会返回 `AI_INPUT_TOO_LARGE`。
+
+## 数据库与迁移
+
+当前 Alembic 迁移链：
+
+1. `0001_m1a_foundation`：用户、课程、资料和归属关系；
+2. `0002_m2_course_material_ai`：完整解析正文、分段来源、摘要、卡片和 AI 审计字段；
+3. `0003_m3a_knowledge_model`：知识节点、知识关系和可追溯来源。
+
+旧 `backend/app/data/courses.json` 不会在启动时自动导入。先执行 dry-run，再决定是否写入目标数据库：
+
+```bash
+.venv/bin/python -m backend.scripts.import_legacy_json \
+  --database-url "sqlite+pysqlite:///./learnpilot-demo.sqlite3" \
+  --source backend/app/data/courses.json \
+  --dry-run
+```
+
+确认结果后移除 `--dry-run`。导入器不会从 `.env` 猜测目标数据库地址；请显式传入并在操作前保留备份。
 
 ## API 概览
 
-| 功能 | API | 说明 |
-| --- | --- | --- |
-| 课程列表 | `GET /api/courses` | 获取课程 |
-| 课程资料 | `GET /api/courses/{course_id}/materials` | 获取一门课的资料 |
-| 文件上传 | `POST /api/courses/{course_id}/materials/upload` | 上传并登记课程资料 |
-| mock 摘要 | `POST /api/materials/{material_id}/summary` | 生成并保存本地摘要 |
-| 资料搜索 | `GET /api/materials/search?q={keyword}&course_id={optional}` | 搜索资料，不修改 JSON |
-| 学习卡片 | `POST /api/materials/{material_id}/cards` | 生成并保存 mock 复习卡片 |
+主要接口包括：
 
-完整说明见 [API 总览](docs/API_OVERVIEW.md)。
+- `GET/POST /api/courses`
+- `GET/PATCH/DELETE /api/courses/{course_id}`
+- `GET/POST /api/courses/{course_id}/materials`
+- `POST /api/courses/{course_id}/materials/upload`
+- `GET/DELETE /api/materials/{material_id}`
+- `GET /api/materials/{material_id}/content`
+- `GET/POST /api/materials/{material_id}/summary`
+- `GET/POST /api/materials/{material_id}/cards`
+- `POST /api/materials/{material_id}/qa`
+- `GET /api/courses/{course_id}/knowledge-model`
+- `GET /api/courses/{course_id}/knowledge-nodes/{node_id}`
+
+请求参数、响应边界和错误码见 [API 总览](docs/API_OVERVIEW.md)。
+
+## 知识模型边界
+
+M3-A 将课程知识模型与未来的学生模型严格分离：
+
+- `KnowledgeNode` 保存名称、规范化名称、描述、重要度和难度；
+- `KnowledgeEdge` 仅定义 `contains` 和 `prerequisite` 两种有向关系；
+- `KnowledgeSource` 必须指向同一课程资料中真实存在的解析分段引用；
+- 数据库和服务层共同阻止自环、重复关系、跨课程关系和无效来源；
+- 删除课程、节点或资料时按照明确的外键策略清理关联记录。
+
+当前公开 API 只读取知识模型。写入方法保留在类型化服务层，供后续经过批准的抽取流程使用。
+
+## 质量检查
+
+后端：
+
+```bash
+.venv/bin/python -m pytest
+.venv/bin/ruff check backend
+.venv/bin/ruff format --check backend
+```
+
+前端：
+
+```bash
+cd frontend
+npm run typecheck
+npm run lint
+npm run test
+npm run build
+```
+
+本次 M3-A 基线验证结果：后端 `93/93` 测试通过，Ruff lint 与格式检查通过；前端类型检查和源码 lint 通过。M3-A 未修改前端，完整 Vitest/构建结果及当前主包体积提示记录在 [M2 实施报告](docs/migration/M2_IMPLEMENTATION_REPORT.md)和 [M3-A 实施报告](docs/migration/M3A_IMPLEMENTATION_REPORT.md)。
 
 ## 项目结构
 
 ```text
 campus-ai/
 ├── backend/
-│   ├── main.py
+│   ├── alembic/                 # 0001 → 0002 → 0003 数据库迁移
 │   ├── app/
-│   │   ├── api/                 # 课程、资料和处理接口
-│   │   ├── schemas/             # Pydantic 模型
-│   │   ├── services/            # 持久化、提取、摘要、卡片服务
-│   │   └── data/courses.json    # 默认演示数据
-│   └── tests/test_courses_api.py
+│   │   ├── ai/                  # provider/mock 适配与审计边界
+│   │   ├── api/                 # 课程、资料、知识模型接口
+│   │   ├── db/                  # 引擎、会话和 ORM 模型
+│   │   ├── documents/           # 文档解析
+│   │   ├── repositories/        # 持久化边界
+│   │   ├── services/            # 课程、AI、知识模型服务
+│   │   └── storage/             # 上传存储
+│   ├── scripts/                 # 显式旧数据导入工具
+│   └── tests/
 ├── frontend/
-│   ├── index.html
-│   ├── styles.css
-│   └── app.js
+│   ├── src/                     # Vue 应用
+│   └── legacy/                  # 旧原生前端，仅供参考
 ├── docs/
-├── scripts/start_dev.sh
+│   ├── architecture/            # 各里程碑架构说明
+│   └── migration/               # 审计与实施报告
+├── alembic.ini
+├── pyproject.toml
 └── requirements.txt
 ```
 
-## 快速启动
+## 文档索引
 
-在项目根目录执行：
-
-```bash
-bash scripts/start_dev.sh
-```
-
-启动后打开：
-
-- 前端学习工作台：[http://127.0.0.1:8000](http://127.0.0.1:8000)
-- FastAPI API 文档：[http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
-
-也可以手动启动：
-
-```bash
-python3 -m venv .venv
-. .venv/bin/activate
-pip install -r requirements.txt
-uvicorn backend.main:app --reload
-```
-
-## 前端演示
-
-1. 打开首页，从左侧选择一门课程。
-2. 查看当前课程下的学习资料；点击资料卡片进入学习包详情。
-3. 选择 TXT 或 MD 文件，上传到当前课程。
-4. 点击“生成学习包”，等待摘要和复习卡片生成。
-5. 在“搜索知识点”中输入 `cache`、`gradient` 或 `linked list`，点击结果查看资料详情。
-
-页面没有额外前端服务和构建步骤。文本提取、摘要和卡片均使用既有后端 API；`/docs` 保留用于查看接口。
-
-## 运行测试
-
-```bash
-wsl -d Ubuntu --cd /home/qxrrr/projects/campus-ai \
-.venv/bin/python -m unittest backend.tests.test_courses_api
-```
-
-测试覆盖课程与资料、JSON 持久化、文件上传、文本提取、mock 摘要、搜索和学习卡片接口。
-
-## 当前 mock AI 能力与限制
-
-- mock 摘要根据已提取文本生成简短摘要。
-- mock 卡片优先使用 AI 摘要，其次使用正文预览和资料说明。
-- 重复生成会更新原资料，不会无限新增重复卡片。
-- 尚未接入真实 LLM、RAG、向量数据库、数据库或用户登录。
-- PDF、PPT、Word 可上传，但当前只自动提取 TXT、MD 的正文。
-
-## 演示与文档
-
-- [比赛 Demo 脚本](docs/DEMO_SCRIPT.md)
-- [演示数据说明](docs/DEMO_DATA.md)
-- [演示前检查清单](docs/DEMO_CHECKLIST.md)
 - [API 总览](docs/API_OVERVIEW.md)
-- [分阶段开发日志](docs/DEVELOPMENT_LOG.md)
-- [V0.1 最终验收清单](docs/V0.1_ACCEPTANCE.md)
+- [开发日志](docs/DEVELOPMENT_LOG.md)
+- [M1-A 数据基础](docs/architecture/M1A_DATA_FOUNDATION.md)
+- [M1-B 前端架构](docs/architecture/M1B_FRONTEND_ARCHITECTURE.md)
+- [M2 课程与资料架构](docs/architecture/M2_COURSE_MATERIAL_ARCHITECTURE.md)
+- [M3-A 知识模型基础](docs/architecture/M3A_KNOWLEDGE_MODEL_FOUNDATION.md)
+- [M3-A 实施报告](docs/migration/M3A_IMPLEMENTATION_REPORT.md)
+- [旧版比赛 Demo 脚本](docs/DEMO_SCRIPT.md)
+- [旧版 V0.1 验收清单](docs/V0.1_ACCEPTANCE.md)
 
-## 后续规划
+## 当前限制
 
-- 使用真实 LLM 替换 mock AI 服务
-- 接入 Embedding、RAG 和向量数据库
-- 支持 PDF、PowerPoint、Word 正文提取
-- 增加数据库、用户资料归属和协作能力
-- 继续完善学生端复习体验
+- 尚无正式登录/多用户会话；当前通过 bootstrap user 保持数据归属边界。
+- 真实 LLM smoke test 需要用户提供 provider 配置；仓库不包含真实密钥。
+- MySQL 8 目标部署尚未在本次本地验证中执行，当前自动化测试使用隔离 SQLite。
+- M3-A 不执行知识抽取或关系推断，前端也尚未展示知识图谱。
+- 诊断、学生掌握度、推荐和进展仍无真实领域数据，界面保持空状态。

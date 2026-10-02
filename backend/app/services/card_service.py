@@ -1,6 +1,7 @@
+from __future__ import annotations
+
 import re
 from datetime import datetime, timezone
-
 
 CARD_COUNT = 3
 CARD_METHOD = "mock"
@@ -11,41 +12,22 @@ CARD_QUESTIONS = (
 )
 
 
-def _card_source_text(material: dict) -> str:
-    for field in ("ai_summary", "text_preview", "summary"):
-        text = material.get(field, "")
-        if text and text.strip():
-            return text.strip()
-
-    return ""
-
-
-def _text_fragments(text: str) -> list[str]:
-    fragments = [
-        fragment.strip()
-        for fragment in re.split(r"(?<=[.!?])\s+", text)
-        if fragment.strip()
-    ]
-    return fragments or [text]
-
-
-def generate_mock_cards(material: dict) -> dict:
-    text = _card_source_text(material)
-    if not text:
+def generate_mock_cards(material_id: int, text: str) -> dict[str, object]:
+    if not text.strip():
         raise ValueError("Material has no text available for card generation")
 
-    fragments = _text_fragments(text)
-    created_at = datetime.now(timezone.utc).isoformat()
+    fragments = [fragment.strip() for fragment in re.split(r"(?<=[.!?])\s+", text) if fragment.strip()] or [text]
+    created_at = datetime.now(timezone.utc)
     cards = []
     for index in range(CARD_COUNT):
         cards.append(
             {
-                "id": material["id"] * 100 + index + 1,
+                "id": material_id * 100 + index + 1,
                 "question": CARD_QUESTIONS[index],
                 "answer": fragments[index % len(fragments)][:240],
-                "source_material_id": material["id"],
+                "source_material_id": material_id,
                 "card_type": "concept" if index == 0 else "review",
-                "created_at": created_at,
+                "created_at": created_at.isoformat(),
             }
         )
 
