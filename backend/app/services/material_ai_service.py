@@ -13,6 +13,10 @@ from backend.app.ai.models import CardsOutput, QAOutput, SummaryOutput
 from backend.app.ai.prompts import cards as cards_prompt
 from backend.app.ai.prompts import material_qa as qa_prompt
 from backend.app.ai.prompts import summary as summary_prompt
+from backend.app.ai.references import normalize_source_reference
+from backend.app.ai.references import (
+    resolve_source_reference as _resolve_source_reference,
+)
 from backend.app.core.settings import Settings, get_settings
 from backend.app.db.models import Material, MaterialSummary, StudyCard, User
 from backend.app.db.session import get_db
@@ -37,22 +41,9 @@ class ReadyMaterial:
 
 
 def _normalize_source_reference(reference: str | None) -> str | None:
-    if reference is None:
-        return None
-    normalized = reference.strip()
-    if normalized.startswith("[") and normalized.endswith("]"):
-        normalized = normalized[1:-1].strip()
-    return normalized
+    """Compatibility wrapper for the M2-tested private helper."""
 
-
-def _resolve_source_reference(reference: str | None, allowed_references: set[str]) -> str | None:
-    normalized = _normalize_source_reference(reference)
-    if normalized is None or normalized in allowed_references:
-        return normalized
-
-    compact = normalized.replace(" ", "")
-    matches = [candidate for candidate in allowed_references if candidate.replace(" ", "") == compact]
-    return matches[0] if len(matches) == 1 else normalized
+    return normalize_source_reference(reference)
 
 
 class MaterialAIService:

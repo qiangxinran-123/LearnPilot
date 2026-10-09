@@ -32,6 +32,8 @@ export interface CourseDeleteResponse {
 
 export type ExtractionStatus =
   | 'SUCCESS'
+  /** Legacy parsed material status retained for M2 compatibility. */
+  | 'EXTRACTED'
   | 'EMPTY_CONTENT'
   | 'DECODE_ERROR'
   | 'PARSE_FAILED'

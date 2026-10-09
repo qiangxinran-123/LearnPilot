@@ -25,6 +25,17 @@ export default defineConfig({
       },
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          // AntV is only reached from the dynamically imported knowledge graph.
+          // Keep its runtime out of the initial course workspace bundle.
+          return id.includes('/node_modules/@antv/') ? 'knowledge-graph-vendor' : undefined;
+        },
+      },
+    },
+  },
   test: {
     environment: 'jsdom',
     globals: true,

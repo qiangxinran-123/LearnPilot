@@ -4,9 +4,11 @@ LearnPilot uses Vue 3, TypeScript, Vite, Vue Router, Pinia, Element Plus, and Ax
 
 M2 connects the Course workspace to the backend: course creation/edit/deletion, material upload/detail/deletion, persisted parsed content, structured summary, study cards, and current-material Q&A. The other product areas retain truthful empty states; no mastery or progress figures are fabricated.
 
+M3-E adds a lazy `课程知识结构` tab to Course Detail. It reads the persisted M3 course model, renders real `CONTAINS` and `PREREQUISITE` relationships, exposes node source provenance and edge evidence, and can invoke the thin course-level build endpoint. It does not create learner mastery/progress data or persist graph layout state.
+
 ## Runtime
 
-Tested with Node.js `24.21.0` and npm `11.19.0`. Supported Node range: `>=22.12.0 <25`.
+Tested with Node.js `22.22.2` and npm `10.9.7`. Supported Node range: `>=22.12.0 <25`.
 
 ## Development
 
@@ -44,6 +46,21 @@ M2 accepts TXT, MD, PDF, and DOCX files up to the configured upload limit (20 Mi
 
 For real AI calls, configure `LLM_MODE=provider`, `LLM_API_KEY`, `LLM_BASE_URL`, and `LLM_MODEL` in the ignored repository-root `.env`; `LLM_TIMEOUT_SECONDS` defaults to 45 and `LLM_MAX_ATTEMPTS` to 2. See the root `.env.example` for the complete example. An absent provider configuration produces `AI_NOT_CONFIGURED`. Explicit `LLM_MODE=mock` is for local verification only; it is not a silent production fallback. `LLM_SUMMARY_MAX_INPUT_CHARS` defaults to 200000; larger parsed documents receive `AI_INPUT_TOO_LARGE`, rather than a partial summary.
 
+## Course knowledge structure
+
+Open a course and select `课程知识结构`. The panel is mounted only while that tab is active. `@antv/g6` is dynamically imported into a separate `knowledge-graph-vendor` chunk, so the normal material workflow does not load the graph runtime.
+
+The graph uses only persisted backend entities:
+
+- `CONTAINS` is a solid directed parent-to-child edge and determines hierarchy layout;
+- `PREREQUISITE` is a dashed directed prior-knowledge edge and does not affect hierarchy layout;
+- multiple real roots and disconnected nodes remain visible without a synthetic course root;
+- node drawers show material title, source reference and bounded excerpt;
+- edge drawers distinguish model rationale from validated material evidence;
+- pan, zoom, fit, reset and local relation filters do not write coordinates back to the API.
+
+The build/update button calls `POST /api/courses/{course_id}/knowledge-model/build`. It is available only when the course has usable parsed material and relies on the backend's M3-B through M3-D idempotency and failure-preservation behavior.
+
 ## Quality checks
 
 ```bash
@@ -53,11 +70,13 @@ npm run test
 npm run build
 ```
 
-`npm run build` creates `dist/`. Once the production build exists, FastAPI serves it as a same-origin SPA while preserving `/api/*` and `/health` routes.
+`npm run build` creates `dist/`. Once the production build exists, FastAPI serves it as a same-origin SPA while preserving `/api/*` and `/health` routes. The build currently reports a nonfatal size advisory for the main bundle and lazy G6 vendor chunk.
 
 ## Verification
 
-Typecheck, lint, production build, and Vitest (17/17) passed. The build reports a nonfatal main-chunk warning above 500 kB. A real browser flow against FastAPI used explicit `LLM_MODE=mock` to create a course, upload and parse a self-created two-page PDF, generate summary/cards, and answer a page-2 question with a `PDF 第2页` reference. Refresh did not repeat generation, and server restart retained artifacts. Material Q&A screenshots were visually inspected at 1440/1280/1024 px and Course at 1280 px without overflow. This flow does not establish a live provider call; real LLM smoke remains blocked by absent configuration.
+Typecheck, lint, production build, and the full Vitest suite (`31/31`) passed. The M2 material workflow remains covered, and the M3-E tests cover deterministic graph adaptation, multiple roots, disconnected concepts, malformed-edge exclusion, local filters, build/reload behavior, failure preservation, source provenance and relation-direction drawers.
+
+A real-provider browser E2E used two self-authored TXT materials and the course-level build flow. It produced a persisted model with 12 nodes, 3 `CONTAINS` edges and 13 `PREREQUISITE` edges, then verified node sources, edge evidence, filtering, pan/zoom/fit/reset and responsive behavior at 1440/1280/1024 px. No credential, provider endpoint or complete user material is recorded in the repository.
 
 ## Legacy migration
 

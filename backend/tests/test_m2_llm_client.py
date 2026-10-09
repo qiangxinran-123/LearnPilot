@@ -8,7 +8,7 @@ from pydantic import BaseModel
 
 from backend.app.ai.client import ExplicitMockLLMClient, OpenAICompatibleLLMClient
 from backend.app.ai.errors import AIServiceError
-from backend.app.ai.models import CardsOutput
+from backend.app.ai.models import CardsOutput, KnowledgeExtractionOutput
 from backend.app.core.settings import Settings
 
 
@@ -95,6 +95,42 @@ def test_invalid_structured_content_is_retried_then_succeeds(monkeypatch: pytest
     monkeypatch.setattr("backend.app.ai.client.time.sleep", lambda seconds: None)
     output = make_client(max_attempts=2).generate_structured(operation="test", messages=[], schema=SmallOutput)
     assert output.data.answer == "Document-grounded answer"
+    assert attempts == 2
+
+
+def test_knowledge_extraction_invalid_json_retries_then_succeeds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    attempts = 0
+
+    def fake_urlopen(*args: object, **kwargs: object) -> FakeResponse:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            return FakeResponse(b'{"choices":[{"message":{"content":"not-json"}}]}')
+        content = json.dumps(
+            {
+                "candidates": [
+                    {
+                        "name": "Cache",
+                        "description": "A small fast memory structure.",
+                        "importance": "high",
+                        "difficulty": "intermediate",
+                        "source_references": ["PDF 第 1 页"],
+                    }
+                ]
+            }
+        )
+        return FakeResponse(json.dumps({"choices": [{"message": {"content": content}}]}).encode())
+
+    monkeypatch.setattr("backend.app.ai.client.urlopen", fake_urlopen)
+    monkeypatch.setattr("backend.app.ai.client.time.sleep", lambda seconds: None)
+    output = make_client(max_attempts=2).generate_structured(
+        operation="knowledge_extraction",
+        messages=[],
+        schema=KnowledgeExtractionOutput,
+    )
+    assert output.data.candidates[0].name == "Cache"
     assert attempts == 2
 
 

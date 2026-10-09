@@ -1,6 +1,6 @@
 # LearnPilot API 总览
 
-本文以当前 LearnPilot V1 / M3-A 代码为准。
+本文以当前 LearnPilot V1 / M3 最终验收代码为准。
 
 - 本地 Base URL：`http://127.0.0.1:8000`
 - Swagger UI：`GET /docs`
@@ -95,22 +95,47 @@ AI 运行边界：
 - 限流返回 HTTP `429`；超时和 provider 暂时错误返回 `503`；其他可预期 AI 错误返回 `400`；
 - 默认摘要输入上限为 200000 字符，超过时返回 `AI_INPUT_TOO_LARGE`。
 
-## M3-A 知识模型接口
+## M3 课程知识模型接口
 
-| 方法 | 路径 | 成功响应 | 常见失败 |
+| 方法 | 路径 | 作用 | 成功响应 |
 | --- | --- | --- | --- |
-| GET | `/api/courses/{course_id}/knowledge-model` | `200`，返回 `course_id`、`nodes` 和 `edges`。 | 课程不存在或不属于当前 owner 返回 `404`。 |
-| GET | `/api/courses/{course_id}/knowledge-nodes/{node_id}` | `200`，返回节点、来源和相关关系。 | 课程或节点不存在、节点不属于该课程时返回 `404`。 |
+| GET | `/api/courses/{course_id}/knowledge-model` | 读取当前已发布课程知识模型。 | `200`，返回 `course_id`、活动节点和当前关系。 |
+| POST | `/api/courses/{course_id}/knowledge-model/build` | 按顺序编排资料抽取、课程归一化和关系生成。 | `200`，返回资料/节点/两类关系数量及 `reused`。 |
+| GET | `/api/courses/{course_id}/knowledge-nodes/{node_id}` | 读取节点、资料来源和相关关系。 | `200`，返回 `node`、`sources`、`related_edges`。 |
+| POST | `/api/courses/{course_id}/materials/{material_id}/knowledge-extraction` | 对一份已解析资料执行 M3-B 候选抽取。 | `200`，返回抽取运行、候选及 `reused`。 |
+| GET | `/api/courses/{course_id}/materials/{material_id}/knowledge-extraction` | 读取该资料当前成功抽取结果。 | `200`，返回运行和候选。 |
+| POST | `/api/courses/{course_id}/knowledge-canonicalization` | 对当前候选执行 M3-C 课程级归一化。 | `200`，返回运行、规范节点、候选解析及 `reused`。 |
+| GET | `/api/courses/{course_id}/knowledge-canonicalization` | 读取当前成功归一化结果。 | `200`，返回运行、节点和解析记录。 |
+| POST | `/api/courses/{course_id}/knowledge-relationships` | 对活动规范节点执行 M3-D 关系生成。 | `200`，返回运行、`contains_edges`、`prerequisite_edges` 和 `reused`。 |
+| GET | `/api/courses/{course_id}/knowledge-relationships` | 读取当前成功关系运行。 | `200`，返回两类关系及其证据。 |
 
-M3-A 的公开接口只读。当前没有临时知识节点/关系写接口，也不会在请求时调用 LLM。
+三个阶段 POST 接口接受可选 JSON `{"regenerate": true}`。默认 `false` 时，相同的资料内容、候选/节点快照、模型、prompt 和配置版本会复用当前成功运行；显式重新生成会创建新的尝试，但失败不会覆盖已发布结果。课程级 `build` 无请求体，并始终使用各阶段既有的幂等策略。
 
-知识模型字段：
+处理链：
 
-- 节点：`id`、`course_id`、`name`、`normalized_name`、`description`、`importance`、`difficulty` 和时间戳；
-- 关系：source/target 节点、`contains` 或 `prerequisite` 类型和时间戳；
-- 来源：知识节点、资料、`source_reference`、可选摘录和创建时间。
+```text
+MaterialContent + parser segments
+  -> M3-B KnowledgeCandidate + KnowledgeCandidateSource
+  -> M3-C KnowledgeNode + KnowledgeSource
+  -> M3-D CONTAINS / PREREQUISITE + KnowledgeEdgeEvidence
+  -> M3-E course-local visualization
+```
 
-来源引用必须精确匹配同一课程资料 `MaterialContent.segments` 中真实存在的 `source_reference`。服务层与数据库约束共同拒绝自环、重复关系、跨课程关系、重复来源和不可追溯来源。
+核心约束：
+
+- M3-B 只产生候选，不直接产生规范节点；候选引用必须存在于实际发送给 provider 的资料分段中；
+- M3-C 先做确定性精确归一化，再对受限候选组进行保守语义判断，并保存每个候选的解析结果；
+- M3-D 将 `source -> CONTAINS -> target` 定义为父概念到子概念，将 `source -> PREREQUISITE -> target` 定义为先修到依赖概念；
+- `CONTAINS` 必须形成允许多根、每个子节点最多一个直接父节点的无环森林；`PREREQUISITE` 必须独立形成 DAG；
+- 来源引用必须精确匹配同一课程 `MaterialContent.segments` 中真实存在的 `source_reference`；模型不能提供持久化摘录正文；
+- 所有读写都受 owner、课程、资料和当前运行边界约束，不公开其他课程的存在。
+
+阶段错误映射：
+
+- 输入/前置状态未就绪：HTTP `409`，错误码以 `_NOT_READY` 结尾；
+- provider 结构或关系验证失败：HTTP `422`，错误码以 `_INVALID_OUTPUT` 或 `_INVALID_REFERENCE` 结尾；
+- provider/阶段执行失败：HTTP `502`，错误码以 `_FAILED` 结尾；
+- 课程、资料或节点不存在/不属于当前 owner：HTTP `404`。
 
 ## 统一错误格式
 
@@ -143,4 +168,9 @@ M3-A 的公开接口只读。当前没有临时知识节点/关系写接口，�
 - [M2 课程与资料架构](architecture/M2_COURSE_MATERIAL_ARCHITECTURE.md)
 - [M2 实施报告](migration/M2_IMPLEMENTATION_REPORT.md)
 - [M3-A 知识模型基础](architecture/M3A_KNOWLEDGE_MODEL_FOUNDATION.md)
+- [M3-B AI 知识抽取](architecture/M3B_AI_KNOWLEDGE_EXTRACTION.md)
+- [M3-C 知识归一化](architecture/M3C_KNOWLEDGE_CANONICALIZATION.md)
+- [M3-D 知识关系](architecture/M3D_KNOWLEDGE_RELATIONSHIPS.md)
+- [M3-E 知识结构前端](architecture/M3E_KNOWLEDGE_STRUCTURE_FRONTEND.md)
 - [M3-A 实施报告](migration/M3A_IMPLEMENTATION_REPORT.md)
+- [M3 最终验收](migration/M3_FINAL_ACCEPTANCE.md)

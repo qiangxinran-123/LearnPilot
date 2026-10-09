@@ -1,4 +1,4 @@
-import axios, { type AxiosInstance } from 'axios';
+import axios, { type AxiosInstance, type AxiosRequestConfig } from 'axios';
 
 import type { BackendErrorBody, HealthResponse } from '@/types/api';
 
@@ -81,8 +81,12 @@ export const httpClient = {
     return response.data;
   },
 
-  async post<T>(path: string, payload?: unknown): Promise<T> {
-    const response = await client.post<T>(path, payload);
+  async post<T>(
+    path: string,
+    payload?: unknown,
+    options?: Pick<AxiosRequestConfig, 'timeout'>,
+  ): Promise<T> {
+    const response = await client.post<T>(path, payload, options);
     return response.data;
   },
 

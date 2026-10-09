@@ -24,6 +24,11 @@ from backend.app.schemas.knowledge import (
     KnowledgeSourceCreate,
 )
 from backend.app.services.course_service import ResourceNotFoundError
+from backend.app.services.knowledge_relationship_validation import (
+    KnowledgeRelationshipValidationError,
+    RelationshipEdgeSpec,
+    validate_relationship_edges,
+)
 
 
 class KnowledgeModelError(ValueError):
@@ -67,7 +72,7 @@ class KnowledgeModelService:
             self._require_course(course_id, owner.id)
             return (
                 self.node_repository.list_by_course(course_id),
-                self.edge_repository.list_by_course(course_id),
+                self.edge_repository.list_current_by_course(course_id),
             )
 
     def get_node_detail(
@@ -77,12 +82,12 @@ class KnowledgeModelService:
             owner = self._get_or_create_owner()
             self._require_course(course_id, owner.id)
             node = self.node_repository.get_by_id(node_id)
-            if node is None or node.course_id != course_id:
+            if node is None or node.course_id != course_id or not node.is_active:
                 raise KnowledgeNodeNotFoundError()
             return (
                 node,
                 self.source_repository.list_for_node(node_id),
-                self.edge_repository.list_for_node(node_id),
+                self.edge_repository.list_current_for_node(node_id),
             )
 
     def create_node(self, course_id: int, payload: KnowledgeNodeCreate) -> KnowledgeNode:
@@ -140,6 +145,27 @@ class KnowledgeModelService:
                         "KNOWLEDGE_DUPLICATE_EDGE",
                         "The knowledge edge already exists.",
                     )
+                try:
+                    validate_relationship_edges(
+                        node_ids={node.id for node in self.node_repository.list_by_course(course_id)},
+                        edges=[
+                            *(
+                                RelationshipEdgeSpec(
+                                    edge.source_node_id,
+                                    edge.target_node_id,
+                                    edge.relation_type,
+                                )
+                                for edge in self.edge_repository.list_current_by_course(course_id)
+                            ),
+                            RelationshipEdgeSpec(
+                                payload.source_node_id,
+                                payload.target_node_id,
+                                payload.relation_type,
+                            ),
+                        ],
+                    )
+                except KnowledgeRelationshipValidationError as error:
+                    raise KnowledgeModelError("KNOWLEDGE_EDGE_INVALID", str(error)) from error
                 return self.edge_repository.create(
                     KnowledgeEdge(
                         course_id=course_id,

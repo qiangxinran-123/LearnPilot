@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from backend.app.db.models import KnowledgeNode
@@ -19,6 +19,17 @@ class KnowledgeNodeRepository:
         return self.session.get(KnowledgeNode, node_id)
 
     def list_by_course(self, course_id: int) -> list[KnowledgeNode]:
+        statement = (
+            select(KnowledgeNode)
+            .where(
+                KnowledgeNode.course_id == course_id,
+                KnowledgeNode.is_active.is_(True),
+            )
+            .order_by(KnowledgeNode.id)
+        )
+        return list(self.session.scalars(statement))
+
+    def list_all_by_course(self, course_id: int) -> list[KnowledgeNode]:
         statement = select(KnowledgeNode).where(KnowledgeNode.course_id == course_id).order_by(KnowledgeNode.id)
         return list(self.session.scalars(statement))
 
@@ -37,3 +48,13 @@ class KnowledgeNodeRepository:
             KnowledgeNode.normalized_name == normalized_name,
         )
         return self.session.scalar(statement)
+
+    def deactivate_managed_except(self, course_id: int, active_node_ids: set[int]) -> None:
+        statement = update(KnowledgeNode).where(
+            KnowledgeNode.course_id == course_id,
+            KnowledgeNode.managed_by_canonicalization.is_(True),
+        )
+        if active_node_ids:
+            statement = statement.where(KnowledgeNode.id.not_in(active_node_ids))
+        self.session.execute(statement.values(is_active=False))
+        self.session.flush()

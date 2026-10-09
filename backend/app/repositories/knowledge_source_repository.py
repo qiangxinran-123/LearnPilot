@@ -26,6 +26,11 @@ class KnowledgeSourceRepository:
         self.session.flush()
         return result.rowcount or 0
 
+    def delete_for_node(self, node_id: int) -> int:
+        result = self.session.execute(delete(KnowledgeSource).where(KnowledgeSource.knowledge_node_id == node_id))
+        self.session.flush()
+        return result.rowcount or 0
+
     def exists(self, node_id: int, material_id: int, source_reference: str) -> bool:
         statement = select(KnowledgeSource.id).where(
             KnowledgeSource.knowledge_node_id == node_id,

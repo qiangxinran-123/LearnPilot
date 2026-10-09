@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Enum, ForeignKey, Index, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Enum, ForeignKey, Index, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.app.db.base import Base, TimestampMixin
@@ -51,6 +51,8 @@ class KnowledgeNode(TimestampMixin, Base):
         default=KnowledgeDifficulty.INTERMEDIATE,
         nullable=False,
     )
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    managed_by_canonicalization: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     course: Mapped[Course] = relationship(back_populates="knowledge_nodes")
     sources: Mapped[list[KnowledgeSource]] = relationship(back_populates="knowledge_node", passive_deletes=True)

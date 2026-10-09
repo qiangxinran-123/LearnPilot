@@ -22,6 +22,7 @@ class KnowledgeEdge(TimestampMixin, Base):
             "relation_type",
             name="uq_knowledge_edges_course_source_target_relation",
         ),
+        UniqueConstraint("id", "course_id", name="uq_knowledge_edges_id_course"),
         ForeignKeyConstraint(
             ["course_id", "source_node_id"],
             ["knowledge_nodes.course_id", "knowledge_nodes.id"],
@@ -33,6 +34,12 @@ class KnowledgeEdge(TimestampMixin, Base):
             ["knowledge_nodes.course_id", "knowledge_nodes.id"],
             ondelete="CASCADE",
             name="fk_knowledge_edges_target_in_course",
+        ),
+        ForeignKeyConstraint(
+            ["course_id", "relationship_run_id"],
+            ["knowledge_relationship_runs.course_id", "knowledge_relationship_runs.id"],
+            ondelete="CASCADE",
+            name="fk_knowledge_edges_relationship_run_course",
         ),
         Index("ix_knowledge_edges_source_node_id", "source_node_id"),
         Index("ix_knowledge_edges_target_node_id", "target_node_id"),
@@ -52,3 +59,4 @@ class KnowledgeEdge(TimestampMixin, Base):
         ),
         nullable=False,
     )
+    relationship_run_id: Mapped[int | None] = mapped_column(nullable=True, index=True)

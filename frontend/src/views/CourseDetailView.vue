@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, defineAsyncComponent, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import {
   ArrowLeft,
@@ -21,6 +21,10 @@ import { normalizeApiError } from '@/services/http';
 import { fetchMaterials } from '@/services/materials';
 import type { CourseInput, CourseSummary, Material } from '@/types/course';
 
+const KnowledgeStructurePanel = defineAsyncComponent(
+  () => import('@/components/knowledge/KnowledgeStructurePanel.vue'),
+);
+
 const route = useRoute();
 const router = useRouter();
 const courseId = computed(() => Number(route.params.courseId));
@@ -32,6 +36,7 @@ const isEditDialogOpen = ref(false);
 const isUploadDialogOpen = ref(false);
 const isSavingCourse = ref(false);
 const isDeletingCourse = ref(false);
+const activeTab = ref<'materials' | 'knowledge-structure'>('materials');
 const hasValidCourseId = computed(() => Number.isInteger(courseId.value) && courseId.value > 0);
 
 function materialStatusLabel(material: Material): string {
@@ -117,9 +122,16 @@ function handleMaterialUploaded(material: Material): void {
 function openMaterial(material: Material): void {
   void router.push(`/courses/${courseId.value}/materials/${material.id}`);
 }
-onMounted(() => {
-  void loadCourse();
-});
+watch(
+  courseId,
+  () => {
+    course.value = null;
+    materials.value = [];
+    activeTab.value = 'materials';
+    void loadCourse();
+  },
+  { immediate: true },
+);
 </script>
 
 <template>
@@ -167,58 +179,69 @@ onMounted(() => {
         </div>
       </header>
 
-      <section class="materials-section" aria-labelledby="materials-heading">
-        <div class="section-heading">
-          <div>
-            <h2 id="materials-heading">课程资料</h2>
-            <p>上传后会安全存储并解析文本；AI 工具只基于当前资料生成结果。</p>
-          </div>
-          <el-button type="primary" @click="isUploadDialogOpen = true"
-            ><el-icon><UploadFilled /></el-icon>上传资料</el-button
-          >
-        </div>
-        <section v-if="materials.length" class="material-list" aria-label="课程资料列表">
-          <article v-for="material in materials" :key="material.id" class="material-row">
-            <div class="material-row__icon" aria-hidden="true">
-              <el-icon><Document /></el-icon>
+      <el-tabs v-model="activeTab" class="course-workspace__tabs">
+        <el-tab-pane label="课程资料" name="materials">
+          <section class="materials-section" aria-labelledby="materials-heading">
+            <div class="section-heading">
+              <div>
+                <h2 id="materials-heading">课程资料</h2>
+                <p>上传后会安全存储并解析文本；AI 工具只基于当前资料生成结果。</p>
+              </div>
+              <el-button type="primary" @click="isUploadDialogOpen = true"
+                ><el-icon><UploadFilled /></el-icon>上传资料</el-button
+              >
             </div>
-            <div class="material-row__content">
-              <h3>{{ material.title }}</h3>
-              <p>
-                {{ material.original_filename || material.filename || '未命名资料'
-                }}<span v-if="material.size_bytes"> · {{ formatBytes(material.size_bytes) }}</span
-                ><span v-if="formatDate(material.created_at)">
-                  · {{ formatDate(material.created_at) }}</span
+            <section v-if="materials.length" class="material-list" aria-label="课程资料列表">
+              <article v-for="material in materials" :key="material.id" class="material-row">
+                <div class="material-row__icon" aria-hidden="true">
+                  <el-icon><Document /></el-icon>
+                </div>
+                <div class="material-row__content">
+                  <h3>{{ material.title }}</h3>
+                  <p>
+                    {{ material.original_filename || material.filename || '未命名资料'
+                    }}<span v-if="material.size_bytes"> · {{ formatBytes(material.size_bytes) }}</span
+                    ><span v-if="formatDate(material.created_at)">
+                      · {{ formatDate(material.created_at) }}</span
+                    >
+                  </p>
+                </div>
+                <el-tag
+                  :type="
+                    material.extraction_status === 'SUCCESS'
+                      ? 'success'
+                      : material.extraction_status === 'PARSE_FAILED'
+                        ? 'danger'
+                        : 'info'
+                  "
+                  effect="plain"
+                  >{{ materialStatusLabel(material) }}</el-tag
                 >
-              </p>
-            </div>
-            <el-tag
-              :type="
-                material.extraction_status === 'SUCCESS'
-                  ? 'success'
-                  : material.extraction_status === 'PARSE_FAILED'
-                    ? 'danger'
-                    : 'info'
-              "
-              effect="plain"
-              >{{ materialStatusLabel(material) }}</el-tag
-            >
-            <el-button plain @click="openMaterial(material)">打开</el-button>
-          </article>
-        </section>
-        <section v-else class="materials-empty">
-          <div class="materials-empty__icon" aria-hidden="true">
-            <el-icon><FolderAdd /></el-icon>
-          </div>
-          <div>
-            <h3>还没有课程资料</h3>
-            <p>上传课程讲义、教材或笔记后，LearnPilot 可以帮助你整理和理解学习内容。</p>
-          </div>
-          <el-button type="primary" @click="isUploadDialogOpen = true"
-            ><el-icon><Plus /></el-icon>上传资料</el-button
-          >
-        </section>
-      </section>
+                <el-button plain @click="openMaterial(material)">打开</el-button>
+              </article>
+            </section>
+            <section v-else class="materials-empty">
+              <div class="materials-empty__icon" aria-hidden="true">
+                <el-icon><FolderAdd /></el-icon>
+              </div>
+              <div>
+                <h3>还没有课程资料</h3>
+                <p>上传课程讲义、教材或笔记后，LearnPilot 可以帮助你整理和理解学习内容。</p>
+              </div>
+              <el-button type="primary" @click="isUploadDialogOpen = true"
+                ><el-icon><Plus /></el-icon>上传资料</el-button
+              >
+            </section>
+          </section>
+        </el-tab-pane>
+        <el-tab-pane label="课程知识结构" name="knowledge-structure" lazy>
+          <KnowledgeStructurePanel
+            v-if="activeTab === 'knowledge-structure'"
+            :course-id="courseId"
+            :materials="materials"
+          />
+        </el-tab-pane>
+      </el-tabs>
     </template>
     <CourseFormDialog
       v-model="isEditDialogOpen"

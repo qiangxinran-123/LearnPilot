@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+import unicodedata
 from enum import StrEnum
 
 
@@ -24,7 +26,43 @@ class KnowledgeRelationType(StrEnum):
     PREREQUISITE = "prerequisite"
 
 
-def normalize_knowledge_name(name: str) -> str:
-    """Apply deterministic M3-A normalization without semantic inference."""
+class KnowledgeExtractionStatus(StrEnum):
+    PENDING = "pending"
+    RUNNING = "running"
+    SUCCESS = "success"
+    FAILED = "failed"
 
-    return " ".join(name.split()).casefold()
+
+class KnowledgeCanonicalizationStatus(StrEnum):
+    PENDING = "pending"
+    RUNNING = "running"
+    SUCCESS = "success"
+    FAILED = "failed"
+
+
+class KnowledgeRelationshipStatus(StrEnum):
+    PENDING = "pending"
+    RUNNING = "running"
+    SUCCESS = "success"
+    FAILED = "failed"
+
+
+class KnowledgeResolutionType(StrEnum):
+    EXACT = "exact"
+    SEMANTIC_MERGE = "semantic_merge"
+    NEW_NODE = "new_node"
+
+
+class KnowledgeEdgeEvidenceType(StrEnum):
+    MATERIAL = "material"
+    MODEL_INFERENCE = "model_inference"
+    STRUCTURAL = "structural"
+
+
+def normalize_knowledge_name(name: str) -> str:
+    """Apply conservative deterministic normalization without semantic inference."""
+
+    normalized = unicodedata.normalize("NFKC", name)
+    normalized = normalized.translate(str.maketrans({"‐": "-", "‑": "-", "‒": "-", "–": "-", "—": "-", "−": "-"}))
+    normalized = re.sub(r"\s*-\s*", "-", normalized)
+    return " ".join(normalized.split()).casefold()

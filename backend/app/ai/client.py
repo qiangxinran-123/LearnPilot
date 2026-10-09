@@ -162,7 +162,27 @@ class ExplicitMockLLMClient(LLMClient):
         compact = " ".join(source.split())[:360] or "资料内容"
         references = list(dict.fromkeys(re.findall(r"^\[([^\]\n]+)\]$", source, flags=re.MULTILINE)))
         fields = schema.model_fields
-        if "cards" in fields:
+        if "contains_edges" in fields and "prerequisite_edges" in fields:
+            payload: dict[str, object] = {"contains_edges": [], "prerequisite_edges": []}
+        elif "groups" in fields:
+            payload: dict[str, object] = {"groups": []}
+        elif "candidates" in fields:
+            payload: dict[str, object] = {
+                "candidates": (
+                    [
+                        {
+                            "name": "核心概念",
+                            "description": compact[:500],
+                            "importance": "medium",
+                            "difficulty": "intermediate",
+                            "source_references": [references[0]],
+                        }
+                    ]
+                    if references
+                    else []
+                )
+            }
+        elif "cards" in fields:
             payload: dict[str, object] = {
                 "cards": [
                     {

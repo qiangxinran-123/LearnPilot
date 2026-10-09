@@ -233,7 +233,8 @@ def test_fresh_migration_creates_knowledge_schema_and_constraints(tmp_path: Path
     source_unique = {item["name"] for item in inspector.get_unique_constraints("knowledge_sources")}
     assert "uq_knowledge_edges_course_source_target_relation" in edge_unique
     assert "uq_knowledge_sources_node_material_reference" in source_unique
-    assert len(inspector.get_foreign_keys("knowledge_edges")) == 3
+    # M3-D adds a generated-edge ownership foreign key while preserving the M3-A constraints.
+    assert len(inspector.get_foreign_keys("knowledge_edges")) >= 3
     engine.dispose()
 
 

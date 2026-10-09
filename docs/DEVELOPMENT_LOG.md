@@ -1,6 +1,6 @@
 # LearnPilot / CampusAI 分阶段开发日志
 
-本日志同时记录当前 LearnPilot V1 里程碑和早期 CampusAI V0.1 原型演进。当前运行基线是 M3-A；下方 CampusAI V0.1 阶段表仅用于历史追溯。
+本日志同时记录当前 LearnPilot V1 里程碑和早期 CampusAI V0.1 原型演进。当前运行基线已完成 M3-E 与 M3 最终验收；下方 CampusAI V0.1 阶段表仅用于历史追溯。
 
 ## LearnPilot V1 里程碑
 
@@ -10,9 +10,13 @@
 | M1-A | 关系型数据基础 | 引入 SQLAlchemy、Alembic、owner 归属、课程/资料表、显式旧 JSON 导入器和 SQLite 真实迁移测试。 | 迁移与回归测试通过；见 [M1-A 数据基础](architecture/M1A_DATA_FOUNDATION.md)。 |
 | M1-B | Vue 前端架构 | 将活动前端迁移至 Vue 3 + TypeScript + Vite，提供五个一级路由、真实课程列表和诚实空状态。 | 类型检查、lint、测试和生产构建记录见 [M1-B 报告](migration/M1B_FRONTEND_REPORT.md)。 |
 | M2 | 课程与资料闭环 | 支持课程 CRUD、TXT/MD/PDF/DOCX 上传解析、完整正文持久化、结构化摘要、学习卡片和单资料问答。 | SQLite、后端、前端及浏览器流程已验证；真实 provider 和 MySQL 8 尚未 smoke test。 |
-| M3-A | 知识模型基础 | 增加课程知识节点、关系、资料来源、数据库约束、仓储/服务层和两个只读 API。 | 后端 `93/93`、Ruff lint/format 通过；见 [M3-A 报告](migration/M3A_IMPLEMENTATION_REPORT.md)。 |
+| M3-A | 知识模型基础 | 增加课程知识节点、关系、资料来源、数据库约束、仓储/服务层和两个只读 API。 | 阶段回归 `93/93`；见 [M3-A 报告](migration/M3A_IMPLEMENTATION_REPORT.md)。 |
+| M3-B | AI 知识抽取 | 从已解析资料的有界分段中生成候选知识点，严格校验引用并持久化运行与候选来源。 | 阶段回归 `110/110`，真实 DeepSeek smoke 通过。 |
+| M3-C | 知识归一化 | 先确定性精确分组，再保守判断语义同一性，生成活动规范节点并传播来源证据。 | 阶段回归 `125/125`，跨资料归一化 smoke 通过。 |
+| M3-D | 知识关系 | 生成并验证 `CONTAINS` 无环森林和 `PREREQUISITE` DAG，保存运行与关系证据。 | SQLite 约束、幂等、失败保留和真实 provider smoke 通过。 |
+| M3-E | 知识结构前端 | 在课程详情中增加懒加载知识结构图、关系筛选、节点/边证据抽屉和课程级构建入口。 | 后端 `139/139`、前端 `31/31`、typecheck/lint/build 与浏览器验收通过。 |
 
-M3-A 不执行知识抽取、语义去重、层级/先修推断或前端图谱展示，也不引入学生掌握度。Course Model 与未来 Student Model 保持分离。
+M3 完成的是 Course Knowledge Model：资料证据 → 候选 → 规范节点 → 层级/先修关系 → 课程内可视化。它不引入学生掌握度、进度、诊断、推荐或学习路径；Course Model 与未来 Student Model 保持分离。完整边界见 [M3 最终验收](migration/M3_FINAL_ACCEPTANCE.md)。
 
 ## CampusAI V0.1 历史原型阶段
 
@@ -45,4 +49,4 @@ wsl -d Ubuntu --cd /home/qxrrr/projects/campus-ai \
 
 ## 版本定位
 
-CampusAI V0.1 是后端导向的比赛原型，其摘要和卡片使用本地 mock 规则。当前 LearnPilot V1 已迁移到关系数据库、Vue 前端和可配置的模型 provider，并在 M3-A 建立课程知识模型基础；RAG、自动知识抽取、学生模型和推荐仍属于后续里程碑。
+CampusAI V0.1 是后端导向的比赛原型，其摘要和卡片使用本地 mock 规则。当前 LearnPilot V1 已迁移到关系数据库、Vue 前端和可配置的模型 provider，并完成 M3 课程知识模型的抽取、归一化、关系生成与可视化；学生模型、掌握度、诊断、推荐和自适应学习仍属于后续里程碑。
