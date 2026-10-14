@@ -1,6 +1,6 @@
 # LearnPilot
 
-LearnPilot 是 LearnPilot 原型的持续演进版本：面向大学生管理课程资料、提取可追溯正文，并将资料转化为摘要、学习卡片、问答结果和课程知识模型。
+LearnPilot：面向大学生管理课程资料、提取可追溯正文，并将资料转化为摘要、学习卡片、问答结果和课程知识模型。
 
 当前代码基线为 **LearnPilot V1 / M3 Course Knowledge Model Final Acceptance**。M3-A 至 M3-E 已完成课程知识模型的数据基础、AI 抽取、归一化、关系生成和课程内可视化。旧版 LearnPilot V0.x 的 JSON 原型、原生前端和比赛材料仍保留用于追溯，但不再代表当前运行架构。
 
