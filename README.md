@@ -1,8 +1,8 @@
-# LearnPilot（CampusAI）
+# LearnPilot
 
-LearnPilot 是 CampusAI 原型的持续演进版本：面向大学生管理课程资料、提取可追溯正文，并将资料转化为摘要、学习卡片、问答结果和课程知识模型。
+LearnPilot 是 LearnPilot 原型的持续演进版本：面向大学生管理课程资料、提取可追溯正文，并将资料转化为摘要、学习卡片、问答结果和课程知识模型。
 
-当前代码基线为 **LearnPilot V1 / M3 Course Knowledge Model Final Acceptance**。M3-A 至 M3-E 已完成课程知识模型的数据基础、AI 抽取、归一化、关系生成和课程内可视化。旧版 CampusAI V0.x 的 JSON 原型、原生前端和比赛材料仍保留用于追溯，但不再代表当前运行架构。
+当前代码基线为 **LearnPilot V1 / M3 Course Knowledge Model Final Acceptance**。M3-A 至 M3-E 已完成课程知识模型的数据基础、AI 抽取、归一化、关系生成和课程内可视化。旧版 LearnPilot V0.x 的 JSON 原型、原生前端和比赛材料仍保留用于追溯，但不再代表当前运行架构。
 
 ## 当前能力
 
@@ -13,7 +13,7 @@ LearnPilot 是 CampusAI 原型的持续演进版本：面向大学生管理课�
 - AI 默认使用显式配置的 provider；`LLM_MODE=mock` 只用于本地验收，不会作为生产环境静默回退。
 - M3-B 从已解析资料中提取带来源证据的候选知识点；M3-C 保守归一化并生成规范知识节点。
 - M3-D 生成并验证 `CONTAINS` 层级与 `PREREQUISITE` 先修关系，保存关系依据。
-- M3-E 在课程详情中提供可交互知识结构图、节点来源抽屉、关系证据抽屉和一键构建入口。
+- M3-E 将课程详情升级为学习工作台：默认学习概览、完整资料工具、知识层级树与辅助关系图、独立知识详情，以及可恢复的知识构建/更新状态。
 
 M3 建立的是课程模型，不是学生模型。它不包含掌握度、学习进度、诊断、推荐、学习路径或导师代理，也不会把图坐标等展示状态写入领域数据。
 
@@ -83,7 +83,8 @@ LLM_MODEL=...
 3. `0003_m3a_knowledge_model`：知识节点、知识关系和可追溯来源；
 4. `0004_m3b_knowledge_extraction`：抽取运行、候选知识点和候选来源；
 5. `0005_m3c_canonicalization`：归一化运行、候选解析和节点生命周期；
-6. `0006_m3d_relationships`：关系运行、关系证据和生成关系归属。
+6. `0006_m3d_relationships`：关系运行、关系证据和生成关系归属；
+7. `0007_m3e_workspace_build_state`：课程级持久化构建任务、阶段、租约、资料快照和失败恢复状态。
 
 旧 `backend/app/data/courses.json` 不会在启动时自动导入。先执行 dry-run，再决定是否写入目标数据库：
 
@@ -111,6 +112,9 @@ LLM_MODEL=...
 - `POST /api/materials/{material_id}/qa`
 - `GET /api/courses/{course_id}/knowledge-model`
 - `POST /api/courses/{course_id}/knowledge-model/build`
+- `GET /api/courses/{course_id}/knowledge-model/build-status`
+- `POST /api/courses/{course_id}/knowledge-model/build-jobs`
+- `GET /api/courses/{course_id}/knowledge-nodes`
 - `GET /api/courses/{course_id}/knowledge-nodes/{node_id}`
 - `GET/POST /api/courses/{course_id}/materials/{material_id}/knowledge-extraction`
 - `GET/POST /api/courses/{course_id}/knowledge-canonicalization`
@@ -127,7 +131,7 @@ M2 MaterialContent 与解析分段
   → M3-B KnowledgeCandidate 与候选证据
   → M3-C KnowledgeNode 与 KnowledgeSource
   → M3-D CONTAINS / PREREQUISITE 与关系证据
-  → M3-E 课程内查看、筛选与来源检查
+  → M3-E 学习概览、知识详情、层级树/关系图与可靠构建状态
 ```
 
 - 所有实体、运行记录和来源均限制在当前 owner 的同一课程内；
@@ -135,9 +139,10 @@ M2 MaterialContent 与解析分段
 - 归一化优先避免错误合并，并保留候选到规范节点的解析记录；
 - `CONTAINS` 被验证为允许多根的无环森林，`PREREQUISITE` 被独立验证为 DAG；
 - 同一输入快照会复用成功运行，失败的重新生成不会替换已发布模型；
-- 课程详情中的图只使用真实节点和关系，不创建合成根节点，也不持久化布局坐标。
+- 课程学习工作台只使用真实 canonical 节点和关系，不创建合成根节点，也不持久化布局坐标；
+- 构建任务状态和资料快照保存在数据库中，刷新页面后仍可恢复；更新失败会恢复并保留此前已发布的可用知识模型。
 
-`POST /api/courses/{course_id}/knowledge-model/build` 只是按顺序编排既有 M3-B、M3-C、M3-D 服务，不引入新的推理算法。
+`POST /api/courses/{course_id}/knowledge-model/build-jobs` 通过持久化任务按顺序编排既有 M3-B、M3-C、M3-D 服务，不引入新的推理算法。旧同步 `build` 接口继续保留兼容。
 
 ## 质量检查
 
@@ -159,14 +164,14 @@ npm run test
 npm run build
 ```
 
-本次 M3 最终基线验证结果：后端 `139/139` 测试通过，Ruff lint 与格式检查通过；前端 typecheck、lint、Vitest `31/31` 和生产构建通过。构建会提示主包与懒加载 G6 vendor chunk 超过 500 kB，这是已记录的非阻塞体积提示。
+本次 M3-E 最终验证结果：后端 `146/146` 测试通过，Ruff lint 与格式检查通过；前端 typecheck、lint、Prettier、Vitest `62/62` 和生产构建通过。构建会提示懒加载 G6 vendor chunk 超过 500 kB，这是已记录的非阻塞体积提示。
 
 ## 项目结构
 
 ```text
-campus-ai/
+learnpilot/
 ├── backend/
-│   ├── alembic/                 # 0001 → … → 0006 数据库迁移
+│   ├── alembic/                 # 0001 → … → 0007 数据库迁移
 │   ├── app/
 │   │   ├── ai/                  # provider/mock 适配与审计边界
 │   │   ├── api/                 # 课程、资料、知识模型接口
@@ -200,7 +205,9 @@ campus-ai/
 - [M3-C 知识归一化](docs/architecture/M3C_KNOWLEDGE_CANONICALIZATION.md)
 - [M3-D 知识关系](docs/architecture/M3D_KNOWLEDGE_RELATIONSHIPS.md)
 - [M3-E 知识结构前端](docs/architecture/M3E_KNOWLEDGE_STRUCTURE_FRONTEND.md)
+- [M3-E 课程学习工作台](docs/architecture/M3E_KNOWLEDGE_WORKSPACE.md)
 - [M3-A 实施报告](docs/migration/M3A_IMPLEMENTATION_REPORT.md)
+- [M3-E 实施报告](docs/migration/M3E_IMPLEMENTATION_REPORT.md)
 - [M3 最终验收](docs/migration/M3_FINAL_ACCEPTANCE.md)
 - [旧版比赛 Demo 脚本](docs/DEMO_SCRIPT.md)
 - [旧版 V0.1 验收清单](docs/V0.1_ACCEPTANCE.md)
@@ -208,8 +215,8 @@ campus-ai/
 ## 当前限制
 
 - 尚无正式登录/多用户会话；当前通过 bootstrap user 保持数据归属边界。
-- 真实 LLM smoke test 需要用户提供 provider 配置；仓库不包含真实密钥。
+- 仓库不包含真实模型密钥；真实 provider 验证依赖运行环境中的私有配置。
 - MySQL 8 目标部署尚未在本次本地验证中执行，当前自动化测试使用隔离 SQLite。
 - M3 的 provider 判断是受边界和来源校验约束的建议，不代表完整课程真理。
-- 知识图是只读检查界面，不支持图编辑、坐标持久化、导出或完整键盘图遍历。
+- 知识图是辅助探索界面，不支持图编辑、坐标持久化、导出或完整键盘图遍历；层级树和知识列表提供主要的可访问浏览路径。
 - 诊断、学生掌握度、推荐和进展仍无真实领域数据，界面保持空状态。

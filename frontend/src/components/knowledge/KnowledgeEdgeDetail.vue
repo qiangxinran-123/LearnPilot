@@ -18,11 +18,11 @@ const emit = defineEmits<{
 
 const expandedEvidenceIds = ref(new Set<number>());
 
-const sourceNode = computed(() =>
-  props.nodes.find((node) => node.id === props.edge?.source_node_id) ?? null,
+const sourceNode = computed(
+  () => props.nodes.find((node) => node.id === props.edge?.source_node_id) ?? null,
 );
-const targetNode = computed(() =>
-  props.nodes.find((node) => node.id === props.edge?.target_node_id) ?? null,
+const targetNode = computed(
+  () => props.nodes.find((node) => node.id === props.edge?.target_node_id) ?? null,
 );
 const relationTitle = computed(() =>
   props.edge?.relation_type === 'prerequisite' ? '先修关系' : '层级关系',
@@ -99,7 +99,10 @@ function toggleExcerpt(evidenceId: number): void {
           <li v-for="item in evidence" :key="item.id">
             <p class="knowledge-evidence-title">{{ evidenceTitle(item) }}</p>
             <p class="knowledge-evidence-reason">{{ item.reason }}</p>
-            <p v-if="item.evidence_type === 'material' && item.source_reference" class="knowledge-evidence-reference">
+            <p
+              v-if="item.evidence_type === 'material' && item.source_reference"
+              class="knowledge-evidence-reference"
+            >
               {{ item.source_reference }}
             </p>
             <template v-if="item.evidence_type === 'material' && item.excerpt">

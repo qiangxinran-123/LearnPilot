@@ -76,8 +76,8 @@ function createApiClient(): AxiosInstance {
 const client = createApiClient();
 
 export const httpClient = {
-  async get<T>(path: string): Promise<T> {
-    const response = await client.get<T>(path);
+  async get<T>(path: string, options?: Pick<AxiosRequestConfig, 'params'>): Promise<T> {
+    const response = await client.get<T>(path, options);
     return response.data;
   },
 

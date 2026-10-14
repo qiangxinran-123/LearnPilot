@@ -352,12 +352,8 @@ p {
 }
 
 .course-card {
-  display: flex;
   min-width: 0;
-  min-height: 188px;
-  flex-direction: column;
-  align-items: flex-start;
-  padding: var(--lp-space-5);
+  overflow: hidden;
   border: 1px solid var(--lp-border);
   border-radius: var(--lp-radius-md);
   background: var(--lp-surface);
@@ -368,10 +364,26 @@ p {
     transform var(--lp-transition-fast);
 }
 
-.course-card:hover {
+.course-card:has(.course-card__primary-link:hover),
+.course-card:has(.course-card__primary-link:focus-visible) {
   border-color: #b9cee7;
   box-shadow: var(--lp-shadow-md);
   transform: translateY(-2px);
+}
+
+.course-card:has(.course-card__primary-link:active) {
+  transform: translateY(0);
+}
+
+.course-card__primary-link {
+  display: flex;
+  min-height: 188px;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: var(--lp-space-5);
+  color: inherit;
+  cursor: pointer;
+  text-decoration: none;
 }
 
 .course-card__icon {
@@ -591,7 +603,6 @@ p {
   }
 }
 
-
 /* M2 course and materials workspace */
 .page-header {
   display: flex;
@@ -663,12 +674,17 @@ p {
   color: var(--lp-primary);
   font-size: 13px;
   font-weight: 650;
-  text-decoration: none;
 }
 
-.course-card__link:hover {
+.course-card__primary-link:hover .course-card__link,
+.course-card__primary-link:focus-visible .course-card__link {
   color: var(--lp-primary-hover);
-  text-decoration: underline;
+}
+
+.course-card__primary-link:hover .course-card__link span,
+.course-card__primary-link:focus-visible .course-card__link span {
+  display: inline-block;
+  transform: translateX(2px);
 }
 
 .back-link {

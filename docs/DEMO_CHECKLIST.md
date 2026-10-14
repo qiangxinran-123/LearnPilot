@@ -1,13 +1,13 @@
-# CampusAI 演示前检查清单
+# LearnPilot 演示前检查清单
 
 建议在比赛演示前至少完整走一遍。默认演示数据已经准备好，重点是确认服务、页面和关键交互都能稳定运行。
 
 ## 启动与页面
 
-- [ ] 当前目录是 CampusAI 项目根目录。
+- [ ] 当前目录是 LearnPilot 项目根目录。
 - [ ] .venv/bin/python 存在，依赖已安装。
 - [ ] 执行 bash scripts/start_dev.sh 后没有启动错误。
-- [ ] 打开 http://127.0.0.1:8000，能看到 CampusAI 首页。
+- [ ] 打开 http://127.0.0.1:8000，能看到 LearnPilot 首页。
 - [ ] 打开 http://127.0.0.1:8000/docs，Swagger 文档可访问。
 - [ ] 页面课程数量显示为 3 门。
 

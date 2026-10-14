@@ -14,8 +14,11 @@ import { ElMessage } from 'element-plus';
 
 import CourseFormDialog from '@/components/common/CourseFormDialog.vue';
 import MaterialUploadDialog from '@/components/common/MaterialUploadDialog.vue';
+import CourseOverview from '@/components/knowledge/CourseOverview.vue';
+import { presentBuildStatus } from '@/components/knowledge/buildStatus';
 import ErrorState from '@/components/feedback/ErrorState.vue';
 import LoadingBlock from '@/components/feedback/LoadingBlock.vue';
+import { useCourseKnowledgeWorkspace } from '@/composables/useCourseKnowledgeWorkspace';
 import { deleteCourse, fetchCourse, updateCourse } from '@/services/courses';
 import { normalizeApiError } from '@/services/http';
 import { fetchMaterials } from '@/services/materials';
@@ -36,8 +39,27 @@ const isEditDialogOpen = ref(false);
 const isUploadDialogOpen = ref(false);
 const isSavingCourse = ref(false);
 const isDeletingCourse = ref(false);
-const activeTab = ref<'materials' | 'knowledge-structure'>('materials');
+const overview = ref<InstanceType<typeof CourseOverview>>();
+const activeTab = computed<'overview' | 'materials' | 'knowledge-structure'>({
+  get() {
+    return route.query.tab === 'materials' || route.query.tab === 'knowledge-structure'
+      ? route.query.tab
+      : 'overview';
+  },
+  set(tab) {
+    void router.push({
+      name: 'course-detail',
+      params: { courseId: courseId.value },
+      query: tab === 'overview' ? {} : { tab },
+    });
+  },
+});
 const hasValidCourseId = computed(() => Number.isInteger(courseId.value) && courseId.value > 0);
+const knowledge = useCourseKnowledgeWorkspace(courseId);
+const buildPresentation = computed(() =>
+  knowledge.status.value ? presentBuildStatus(knowledge.status.value) : null,
+);
+let courseRequest = 0;
 
 function materialStatusLabel(material: Material): string {
   const labels: Record<string, string> = {
@@ -67,6 +89,8 @@ function formatDate(value: string | null | undefined): string | null {
       }).format(date);
 }
 async function loadCourse(): Promise<void> {
+  const request = ++courseRequest;
+  const requestedCourseId = courseId.value;
   if (!hasValidCourseId.value) {
     errorMessage.value = '课程地址无效。';
     state.value = 'error';
@@ -76,13 +100,15 @@ async function loadCourse(): Promise<void> {
   errorMessage.value = '';
   try {
     const [courseResponse, materialResponse] = await Promise.all([
-      fetchCourse(courseId.value),
-      fetchMaterials(courseId.value),
+      fetchCourse(requestedCourseId),
+      fetchMaterials(requestedCourseId),
     ]);
+    if (request !== courseRequest || requestedCourseId !== courseId.value) return;
     course.value = courseResponse;
     materials.value = materialResponse.materials;
     state.value = 'ready';
   } catch (error: unknown) {
+    if (request !== courseRequest || requestedCourseId !== courseId.value) return;
     state.value = 'error';
     errorMessage.value = normalizeApiError(error).message;
   }
@@ -118,16 +144,27 @@ function handleMaterialUploaded(material: Material): void {
   if (existingIndex >= 0) materials.value.splice(existingIndex, 1, material);
   else materials.value.push(material);
   isUploadDialogOpen.value = false;
+  void knowledge.refreshStatus();
 }
 function openMaterial(material: Material): void {
   void router.push(`/courses/${courseId.value}/materials/${material.id}`);
 }
+async function handleBuild(): Promise<void> {
+  const accepted = await knowledge.startBuild();
+  if (accepted) ElMessage.info('知识结构构建已开始，可稍后返回查看真实进度。');
+}
+watch(
+  () => knowledge.status.value?.completed_at,
+  (completedAt, previous) => {
+    if (completedAt && completedAt !== previous) overview.value?.refreshList();
+  },
+);
 watch(
   courseId,
   () => {
+    courseRequest += 1;
     course.value = null;
     materials.value = [];
-    activeTab.value = 'materials';
     void loadCourse();
   },
   { immediate: true },
@@ -158,6 +195,14 @@ watch(
           <p v-if="formatDate(course.target_date)" class="course-workspace__date">
             目标日期：{{ formatDate(course.target_date) }}
           </p>
+          <p
+            v-if="buildPresentation"
+            class="course-workspace__build-label"
+            :class="`course-workspace__build-label--${buildPresentation.tone}`"
+            role="status"
+          >
+            {{ buildPresentation.title }}
+          </p>
         </div>
         <div class="course-workspace__actions">
           <el-button plain @click="isEditDialogOpen = true"
@@ -180,7 +225,23 @@ watch(
       </header>
 
       <el-tabs v-model="activeTab" class="course-workspace__tabs">
-        <el-tab-pane label="课程资料" name="materials">
+        <el-tab-pane label="学习概览" name="overview">
+          <CourseOverview
+            ref="overview"
+            :course-id="courseId"
+            :materials="materials"
+            :status="knowledge.status.value"
+            :status-state="knowledge.statusState.value"
+            :status-error="knowledge.statusError.value"
+            :build-error="knowledge.buildError.value"
+            :is-running="knowledge.isRunning.value"
+            @materials="activeTab = 'materials'"
+            @structure="activeTab = 'knowledge-structure'"
+            @upload="isUploadDialogOpen = true"
+            @build="handleBuild"
+          />
+        </el-tab-pane>
+        <el-tab-pane label="课程资料" name="materials" lazy>
           <section class="materials-section" aria-labelledby="materials-heading">
             <div class="section-heading">
               <div>
@@ -200,7 +261,8 @@ watch(
                   <h3>{{ material.title }}</h3>
                   <p>
                     {{ material.original_filename || material.filename || '未命名资料'
-                    }}<span v-if="material.size_bytes"> · {{ formatBytes(material.size_bytes) }}</span
+                    }}<span v-if="material.size_bytes">
+                      · {{ formatBytes(material.size_bytes) }}</span
                     ><span v-if="formatDate(material.created_at)">
                       · {{ formatDate(material.created_at) }}</span
                     >
@@ -234,11 +296,18 @@ watch(
             </section>
           </section>
         </el-tab-pane>
-        <el-tab-pane label="课程知识结构" name="knowledge-structure" lazy>
+        <el-tab-pane label="知识结构" name="knowledge-structure" lazy>
           <KnowledgeStructurePanel
             v-if="activeTab === 'knowledge-structure'"
             :course-id="courseId"
             :materials="materials"
+            :model="knowledge.model.value"
+            :model-state="knowledge.modelState.value"
+            :model-error="knowledge.modelError.value"
+            :status="knowledge.status.value"
+            :is-running="knowledge.isRunning.value"
+            @retry="knowledge.refreshModel()"
+            @build="handleBuild"
           />
         </el-tab-pane>
       </el-tabs>
@@ -256,3 +325,61 @@ watch(
     />
   </section>
 </template>
+
+<style scoped>
+.course-workspace__build-label {
+  display: inline-flex;
+  margin-top: 1rem !important;
+  padding: 0.28rem 0.65rem;
+  border: 1px solid #d8e4f2;
+  border-radius: 999px;
+  color: #36597d !important;
+  background: #f4f8fd;
+  font-size: 0.76rem;
+  font-weight: 650;
+}
+.course-workspace__build-label--success {
+  border-color: #cde8d6;
+  color: #287548 !important;
+  background: #f1fbf5;
+}
+.course-workspace__build-label--warning {
+  border-color: #ebdfbe;
+  color: #8b681d !important;
+  background: #fffbef;
+}
+.course-workspace__build-label--error {
+  border-color: #edcfca;
+  color: #a44239 !important;
+  background: #fff6f4;
+}
+.course-workspace__build-label--active {
+  border-color: #bcd5f4;
+  color: #285da3 !important;
+  background: #edf5ff;
+}
+.course-workspace__tabs {
+  margin-top: 1rem;
+  padding: 0.25rem 1.25rem 1.25rem;
+  border: 1px solid var(--lp-border);
+  border-radius: var(--lp-radius-lg);
+  background: var(--lp-surface);
+  box-shadow: var(--lp-shadow-sm);
+}
+.course-workspace__tabs :deep(.el-tabs__header) {
+  margin-bottom: 0.9rem;
+}
+.course-workspace__tabs :deep(.el-tabs__item) {
+  height: 47px;
+  font-weight: 600;
+}
+@media (max-width: 767px) {
+  .course-workspace__tabs {
+    padding: 0.2rem 0.8rem 1rem;
+  }
+  .course-workspace__tabs :deep(.el-tabs__item) {
+    padding: 0 0.55rem;
+    font-size: 0.82rem;
+  }
+}
+</style>

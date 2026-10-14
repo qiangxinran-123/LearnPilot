@@ -1,9 +1,5 @@
 import { httpClient } from '@/services/http';
-import type {
-  Material,
-  MaterialContentResponse,
-  MaterialListResponse,
-} from '@/types/course';
+import type { Material, MaterialContentResponse, MaterialListResponse } from '@/types/course';
 
 export function fetchMaterials(courseId: number): Promise<MaterialListResponse> {
   return httpClient.get<MaterialListResponse>(`/courses/${courseId}/materials`);

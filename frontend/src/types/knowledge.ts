@@ -86,3 +86,49 @@ export interface KnowledgeModelBuildResponse {
   prerequisite_edge_count: number;
   reused: boolean;
 }
+
+export type KnowledgeBuildState =
+  | 'no_materials'
+  | 'not_ready'
+  | 'not_built'
+  | 'running'
+  | 'ready'
+  | 'update_available'
+  | 'failed'
+  | 'update_failed';
+
+export type KnowledgeBuildStage = 'queued' | 'extracting' | 'canonicalizing' | 'relationships';
+
+export interface KnowledgeBuildStatus {
+  course_id: number;
+  state: KnowledgeBuildState;
+  stage: KnowledgeBuildStage | null;
+  job_id: number | null;
+  material_count: number;
+  ready_material_count: number;
+  node_count: number;
+  contains_edge_count: number;
+  prerequisite_edge_count: number;
+  needs_update: boolean;
+  can_build: boolean;
+  has_model: boolean;
+  error_code: string | null;
+  error_message: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+}
+
+export interface KnowledgeBuildJobResponse {
+  job_id: number;
+  status: 'running' | 'success';
+  stage: KnowledgeBuildStage | null;
+  reused: boolean;
+}
+
+export interface CanonicalNodePage {
+  course_id: number;
+  total: number;
+  offset: number;
+  limit: number;
+  nodes: KnowledgeNode[];
+}

@@ -104,7 +104,10 @@ interface ForestComponent {
  * defensive first-parent rule below also keeps manually-added malformed data
  * readable without letting it change prerequisite semantics or create a fake root.
  */
-function buildForestLayout(model: KnowledgeModelResponse, containsEdges: KnowledgeEdge[]): ForestLayout {
+function buildForestLayout(
+  model: KnowledgeModelResponse,
+  containsEdges: KnowledgeEdge[],
+): ForestLayout {
   const nodeIds = sortById(model.nodes).map((node) => node.id);
   const childrenById = new Map<number, number[]>();
   const parentByChild = new Map<number, number>();
@@ -182,14 +185,18 @@ function buildForestLayout(model: KnowledgeModelResponse, containsEdges: Knowled
   }
 
   const widestComponent = Math.max(NODE_WIDTH, ...components.map((component) => component.width));
-  const tallestComponent = Math.max(NODE_HEIGHT, ...components.map((component) => component.height));
+  const tallestComponent = Math.max(
+    NODE_HEIGHT,
+    ...components.map((component) => component.height),
+  );
 
   // A bounded grid keeps many valid forest roots legible. It is a layout choice,
   // not a virtual course-domain node: every visual node remains a real concept.
   components.forEach((component, index) => {
     const column = index % ROOT_COLUMNS;
     const row = Math.floor(index / ROOT_COLUMNS);
-    const originX = column * (widestComponent + COMPONENT_GAP_X) + (widestComponent - component.width) / 2;
+    const originX =
+      column * (widestComponent + COMPONENT_GAP_X) + (widestComponent - component.width) / 2;
     const originY = row * (tallestComponent + COMPONENT_GAP_Y);
 
     for (const [nodeId, position] of component.positions) {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import {
   ArrowLeft,
@@ -21,7 +21,7 @@ import {
   generateMaterialCards,
   generateMaterialSummary,
 } from '@/services/ai-materials';
-import { normalizeApiError } from '@/services/http';
+import { ApiError, normalizeApiError } from '@/services/http';
 import { deleteMaterial, fetchMaterial, fetchMaterialContent } from '@/services/materials';
 import type {
   CardGenerationResponse,
@@ -48,7 +48,19 @@ const qaLoading = ref(false);
 const qaQuestion = ref('');
 const aiError = ref('');
 const expandedCardId = ref<number | null>(null);
-const activeTab = ref('content');
+const activeTab = computed<'content' | 'summary' | 'cards' | 'qa'>({
+  get() {
+    const tab = route.query.tab;
+    return tab === 'summary' || tab === 'cards' || tab === 'qa' ? tab : 'content';
+  },
+  set(tab) {
+    void router.replace({ query: { ...route.query, tab } });
+  },
+});
+const sourceReference = computed(() =>
+  typeof route.query.source === 'string' ? route.query.source.slice(0, 240) : '',
+);
+let materialRequest = 0;
 const parseFailed = computed(() => material.value?.extraction_status !== 'SUCCESS');
 const parseFailureTitle = computed(() => {
   if (material.value?.extraction_status === 'LEGACY_CONTENT_PARTIAL') return '旧版资料内容不完整';
@@ -91,6 +103,9 @@ function formatDate(value: string | null | undefined): string | null {
 }
 
 async function loadMaterial(): Promise<void> {
+  const request = ++materialRequest;
+  const requestedCourseId = courseId.value;
+  const requestedMaterialId = materialId.value;
   if (!Number.isInteger(courseId.value) || !Number.isInteger(materialId.value)) {
     state.value = 'error';
     errorMessage.value = '资料地址无效。';
@@ -99,21 +114,36 @@ async function loadMaterial(): Promise<void> {
   state.value = 'loading';
   errorMessage.value = '';
   aiError.value = '';
+  material.value = null;
+  content.value = null;
+  summary.value = null;
+  cards.value = null;
+  qaAnswer.value = null;
   try {
-    material.value = await fetchMaterial(materialId.value);
-    if (material.value.course_id !== courseId.value) throw new Error('资料不属于当前课程。');
+    const loadedMaterial = await fetchMaterial(requestedMaterialId);
+    if (request !== materialRequest) return;
+    if (loadedMaterial.course_id !== requestedCourseId)
+      throw new ApiError('资料不属于当前课程。', { status: 404 });
     const [contentResponse, summaryResponse, cardsResponse] = await Promise.all([
-      material.value.extraction_status === 'SUCCESS'
-        ? fetchMaterialContent(materialId.value)
+      loadedMaterial.extraction_status === 'SUCCESS'
+        ? fetchMaterialContent(requestedMaterialId)
         : Promise.resolve(null),
-      fetchMaterialSummary(materialId.value),
-      fetchMaterialCards(materialId.value),
+      fetchMaterialSummary(requestedMaterialId),
+      fetchMaterialCards(requestedMaterialId),
     ]);
+    if (
+      request !== materialRequest ||
+      courseId.value !== requestedCourseId ||
+      materialId.value !== requestedMaterialId
+    )
+      return;
+    material.value = loadedMaterial;
     content.value = contentResponse;
     summary.value = summaryResponse;
     cards.value = cardsResponse;
     state.value = 'ready';
   } catch (error: unknown) {
+    if (request !== materialRequest) return;
     state.value = 'error';
     errorMessage.value = normalizeApiError(error).message;
   }
@@ -167,14 +197,23 @@ async function removeMaterial(): Promise<void> {
 function toggleCard(cardId: number): void {
   expandedCardId.value = expandedCardId.value === cardId ? null : cardId;
 }
-onMounted(() => {
-  void loadMaterial();
-});
+watch(
+  [courseId, materialId],
+  () => {
+    materialRequest += 1;
+    void loadMaterial();
+  },
+  { immediate: true },
+);
 </script>
 
 <template>
   <section class="page-view material-workspace">
-    <button class="back-link" type="button" @click="router.push(`/courses/${courseId}`)">
+    <button
+      class="back-link"
+      type="button"
+      @click="router.push(`/courses/${courseId}?tab=materials`)"
+    >
       <el-icon aria-hidden="true"><ArrowLeft /></el-icon>返回课程
     </button>
     <LoadingBlock v-if="state === 'loading'" />
@@ -215,6 +254,9 @@ onMounted(() => {
           >
         </el-popconfirm>
       </header>
+      <p v-if="sourceReference" class="material-source-note">
+        来源位置：{{ sourceReference }}。当前资料页暂不支持精确定位，下面展示资料内容。
+      </p>
       <section v-if="parseFailed" class="parse-failure" role="alert">
         <el-icon aria-hidden="true"><Document /></el-icon>
         <div>
@@ -364,3 +406,15 @@ onMounted(() => {
     </template>
   </section>
 </template>
+
+<style scoped>
+.material-source-note {
+  margin: 1rem 0 0;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid #d7e4f3;
+  border-radius: 10px;
+  color: #395a7e;
+  background: #f5f9fe;
+  font-size: 0.83rem;
+}
+</style>

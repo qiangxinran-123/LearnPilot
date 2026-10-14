@@ -101,6 +101,9 @@ AI 运行边界：
 | --- | --- | --- | --- |
 | GET | `/api/courses/{course_id}/knowledge-model` | 读取当前已发布课程知识模型。 | `200`，返回 `course_id`、活动节点和当前关系。 |
 | POST | `/api/courses/{course_id}/knowledge-model/build` | 按顺序编排资料抽取、课程归一化和关系生成。 | `200`，返回资料/节点/两类关系数量及 `reused`。 |
+| GET | `/api/courses/{course_id}/knowledge-model/build-status` | 读取课程工作台统计、持久化构建阶段及资料更新状态。 | `200`，返回资料/节点/关系计数、`state`、`stage`、`needs_update` 和最近任务信息。 |
+| POST | `/api/courses/{course_id}/knowledge-model/build-jobs` | 创建后台课程知识构建或更新任务。 | `202`，返回持久化任务状态；已有运行任务时安全复用。 |
+| GET | `/api/courses/{course_id}/knowledge-nodes` | 分页浏览或按名称/描述搜索活动 canonical 节点。 | `200`，返回当前课程范围内的 `items`、`total`、`offset` 和 `limit`。 |
 | GET | `/api/courses/{course_id}/knowledge-nodes/{node_id}` | 读取节点、资料来源和相关关系。 | `200`，返回 `node`、`sources`、`related_edges`。 |
 | POST | `/api/courses/{course_id}/materials/{material_id}/knowledge-extraction` | 对一份已解析资料执行 M3-B 候选抽取。 | `200`，返回抽取运行、候选及 `reused`。 |
 | GET | `/api/courses/{course_id}/materials/{material_id}/knowledge-extraction` | 读取该资料当前成功抽取结果。 | `200`，返回运行和候选。 |
@@ -109,7 +112,9 @@ AI 运行边界：
 | POST | `/api/courses/{course_id}/knowledge-relationships` | 对活动规范节点执行 M3-D 关系生成。 | `200`，返回运行、`contains_edges`、`prerequisite_edges` 和 `reused`。 |
 | GET | `/api/courses/{course_id}/knowledge-relationships` | 读取当前成功关系运行。 | `200`，返回两类关系及其证据。 |
 
-三个阶段 POST 接口接受可选 JSON `{"regenerate": true}`。默认 `false` 时，相同的资料内容、候选/节点快照、模型、prompt 和配置版本会复用当前成功运行；显式重新生成会创建新的尝试，但失败不会覆盖已发布结果。课程级 `build` 无请求体，并始终使用各阶段既有的幂等策略。
+三个阶段 POST 接口接受可选 JSON `{"regenerate": true}`。默认 `false` 时，相同的资料内容、候选/节点快照、模型、prompt 和配置版本会复用当前成功运行；显式重新生成会创建新的尝试，但失败不会覆盖已发布结果。课程级同步 `build` 无请求体，并始终使用各阶段既有的幂等策略。
+
+M3-E 工作台优先使用 `build-jobs`。任务状态保存在数据库中，并以租约和心跳识别中断任务；页面刷新不会丢失状态。任务成功后保存资料内容哈希快照，新资料或内容变化会产生 `needs_update: true`。更新失败时，服务恢复构建前的节点字段、来源和关系，旧模型继续可用。没有资料、资料尚未解析、未构建、构建中、已就绪、待更新和失败均为明确的业务状态，不使用虚假百分比。
 
 处理链：
 
@@ -172,5 +177,7 @@ MaterialContent + parser segments
 - [M3-C 知识归一化](architecture/M3C_KNOWLEDGE_CANONICALIZATION.md)
 - [M3-D 知识关系](architecture/M3D_KNOWLEDGE_RELATIONSHIPS.md)
 - [M3-E 知识结构前端](architecture/M3E_KNOWLEDGE_STRUCTURE_FRONTEND.md)
+- [M3-E 课程学习工作台](architecture/M3E_KNOWLEDGE_WORKSPACE.md)
 - [M3-A 实施报告](migration/M3A_IMPLEMENTATION_REPORT.md)
+- [M3-E 实施报告](migration/M3E_IMPLEMENTATION_REPORT.md)
 - [M3 最终验收](migration/M3_FINAL_ACCEPTANCE.md)

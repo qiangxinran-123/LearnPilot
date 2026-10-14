@@ -48,7 +48,9 @@ export function useKnowledgeModel(courseId: Ref<number>) {
     isEdgeDetailOpen.value = false;
   }
 
-  async function load({ preserveModel = false }: { preserveModel?: boolean } = {}): Promise<boolean> {
+  async function load({
+    preserveModel = false,
+  }: { preserveModel?: boolean } = {}): Promise<boolean> {
     const request = ++activeLoadRequest;
     if (!preserveModel || model.value === null) {
       state.value = 'loading';

@@ -11,4 +11,7 @@ import './styles/utilities.css';
 
 const app = createApp(App);
 app.use(ElementPlus).use(pinia).use(router).mount('#app');
-if (import.meta.env.DEV) void requestHealth().catch((error: unknown) => { console.warn('[LearnPilot] Backend health check failed.', error); });
+if (import.meta.env.DEV)
+  void requestHealth().catch((error: unknown) => {
+    console.warn('[LearnPilot] Backend health check failed.', error);
+  });

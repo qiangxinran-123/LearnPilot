@@ -1,18 +1,22 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
+import json
+from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime
 
 from fastapi import Depends
 from sqlalchemy.orm import Session
 
 from backend.app.core.settings import Settings, get_settings
-from backend.app.db.models import KnowledgeNode, Material, User
+from backend.app.db.models import KnowledgeSource, Material, User
 from backend.app.db.session import get_db
 from backend.app.repositories import (
     CourseRepository,
     KnowledgeCanonicalizationRunRepository,
     KnowledgeNodeRepository,
+    KnowledgeRelationshipRunRepository,
+    KnowledgeSourceRepository,
     MaterialContentRepository,
     MaterialRepository,
     UserRepository,
@@ -52,10 +56,92 @@ class CourseKnowledgeBuildResult:
     reused: bool
 
 
-@dataclass(frozen=True)
-class _CanonicalModelCheckpoint:
-    run_id: int | None
-    active_managed_node_ids: frozenset[int]
+def capture_course_knowledge_checkpoint(session: Session, course_id: int) -> str:
+    """Capture published node content and provenance before a staged update."""
+
+    node_repository = KnowledgeNodeRepository(session)
+    source_repository = KnowledgeSourceRepository(session)
+    current_canonicalization = KnowledgeCanonicalizationRunRepository(session).get_current_for_course(course_id)
+    current_relationships = KnowledgeRelationshipRunRepository(session).get_current_for_course(course_id)
+    return json.dumps(
+        {
+            "canonicalization_run_id": current_canonicalization.id if current_canonicalization else None,
+            "relationship_run_id": current_relationships.id if current_relationships else None,
+            "nodes": [
+                {
+                    "id": node.id,
+                    "name": node.name,
+                    "normalized_name": node.normalized_name,
+                    "description": node.description,
+                    "importance": node.importance.value,
+                    "difficulty": node.difficulty.value,
+                    "is_active": node.is_active,
+                    "managed_by_canonicalization": node.managed_by_canonicalization,
+                    "sources": [
+                        {
+                            "material_id": source.material_id,
+                            "source_reference": source.source_reference,
+                            "excerpt": source.excerpt,
+                            "created_at": source.created_at.isoformat(),
+                        }
+                        for source in source_repository.list_for_node(node.id)
+                    ],
+                }
+                for node in node_repository.list_all_by_course(course_id)
+            ],
+        },
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+
+
+def restore_course_knowledge_checkpoint(session: Session, course_id: int, checkpoint_json: str) -> None:
+    """Restore the prior published canonical model after a failed update."""
+
+    from backend.app.models import KnowledgeDifficulty, KnowledgeImportance
+
+    checkpoint = json.loads(checkpoint_json)
+    original_nodes = {item["id"]: item for item in checkpoint["nodes"]}
+    node_repository = KnowledgeNodeRepository(session)
+    source_repository = KnowledgeSourceRepository(session)
+    material_repository = MaterialRepository(session)
+    for node in node_repository.list_all_by_course(course_id):
+        original = original_nodes.get(node.id)
+        if original is None:
+            if node.managed_by_canonicalization:
+                node.is_active = False
+                node_repository.update(node)
+            continue
+        node.name = original["name"]
+        node.normalized_name = original["normalized_name"]
+        node.description = original["description"]
+        node.importance = KnowledgeImportance(original["importance"])
+        node.difficulty = KnowledgeDifficulty(original["difficulty"])
+        node.is_active = original["is_active"]
+        node.managed_by_canonicalization = original["managed_by_canonicalization"]
+        node_repository.update(node)
+        source_repository.delete_for_node(node.id)
+        for source in original["sources"]:
+            material = material_repository.get_by_id(source["material_id"])
+            if material is None or material.course_id != course_id:
+                continue
+            source_repository.create(
+                KnowledgeSource(
+                    knowledge_node_id=node.id,
+                    material_id=source["material_id"],
+                    source_reference=source["source_reference"],
+                    excerpt=source["excerpt"],
+                    created_at=datetime.fromisoformat(source["created_at"]),
+                )
+            )
+    runs = KnowledgeCanonicalizationRunRepository(session)
+    runs.clear_current(course_id)
+    previous_run_id = checkpoint["canonicalization_run_id"]
+    if previous_run_id is not None:
+        previous_run = runs.get_by_id(previous_run_id)
+        if previous_run is not None:
+            previous_run.is_current = True
+            runs.save(previous_run)
 
 
 class CourseKnowledgeBuildService:
@@ -94,14 +180,23 @@ class CourseKnowledgeBuildService:
         self.canonicalization_service = canonicalization_service
         self.relationship_service = relationship_service
 
-    def build(self, course_id: int) -> CourseKnowledgeBuildResult:
+    def build(
+        self,
+        course_id: int,
+        *,
+        on_stage: Callable[[str], None] | None = None,
+    ) -> CourseKnowledgeBuildResult:
         ready_materials = self._load_ready_materials(course_id)
         checkpoint = self._capture_checkpoint(course_id)
 
         extraction_results = []
         try:
+            if on_stage is not None:
+                on_stage("extracting")
             for material in ready_materials:
                 extraction_results.append(self.extraction_service.extract(course_id, material.id, regenerate=False))
+            if on_stage is not None:
+                on_stage("canonicalizing")
             canonicalization_result = self.canonicalization_service.canonicalize(
                 course_id,
                 regenerate=False,
@@ -110,6 +205,8 @@ class CourseKnowledgeBuildService:
             raise self._stage_error(error) from error
 
         try:
+            if on_stage is not None:
+                on_stage("relationships")
             relationship_result = self.relationship_service.generate_relationships(
                 course_id,
                 regenerate=False,
@@ -156,36 +253,13 @@ class CourseKnowledgeBuildService:
         content = self.content_repository.get_for_material(material.id)
         return content is not None and bool(content.plain_text.strip())
 
-    def _capture_checkpoint(self, course_id: int) -> _CanonicalModelCheckpoint:
+    def _capture_checkpoint(self, course_id: int) -> str:
         with self.session.begin():
-            current_run = self.canonicalization_run_repository.get_current_for_course(course_id)
-            active_managed_node_ids = frozenset(
-                node.id
-                for node in self.node_repository.list_all_by_course(course_id)
-                if node.managed_by_canonicalization and node.is_active
-            )
-            return _CanonicalModelCheckpoint(
-                run_id=current_run.id if current_run is not None else None,
-                active_managed_node_ids=active_managed_node_ids,
-            )
+            return capture_course_knowledge_checkpoint(self.session, course_id)
 
-    def _restore_checkpoint(self, course_id: int, checkpoint: _CanonicalModelCheckpoint) -> None:
-        """Restore publication flags while retaining immutable run history."""
-
+    def _restore_checkpoint(self, course_id: int, checkpoint: str) -> None:
         with self.session.begin():
-            self.canonicalization_run_repository.clear_current(course_id)
-            if checkpoint.run_id is not None:
-                previous_run = self.canonicalization_run_repository.get_by_id(checkpoint.run_id)
-                if previous_run is not None:
-                    previous_run.is_current = True
-                    self.canonicalization_run_repository.save(previous_run)
-
-            for node in self._managed_nodes(course_id):
-                node.is_active = node.id in checkpoint.active_managed_node_ids
-                self.node_repository.update(node)
-
-    def _managed_nodes(self, course_id: int) -> Iterable[KnowledgeNode]:
-        return (node for node in self.node_repository.list_all_by_course(course_id) if node.managed_by_canonicalization)
+            restore_course_knowledge_checkpoint(self.session, course_id, checkpoint)
 
     @staticmethod
     def _stage_error(
@@ -238,4 +312,6 @@ __all__ = [
     "CourseKnowledgeBuildResult",
     "CourseKnowledgeBuildService",
     "get_course_knowledge_build_service",
+    "capture_course_knowledge_checkpoint",
+    "restore_course_knowledge_checkpoint",
 ]

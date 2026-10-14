@@ -1,5 +1,6 @@
 import { defineComponent } from 'vue';
 import { flushPromises, mount } from '@vue/test-utils';
+import { createMemoryHistory, createRouter } from 'vue-router';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import KnowledgeEdgeDetail from '@/components/knowledge/KnowledgeEdgeDetail.vue';
@@ -13,7 +14,7 @@ import {
   fetchKnowledgeRelationships,
 } from '@/services/knowledge';
 import type { Material } from '@/types/course';
-import type { KnowledgeModelResponse } from '@/types/knowledge';
+import type { KnowledgeBuildStatus, KnowledgeModelResponse } from '@/types/knowledge';
 
 vi.mock('@/services/knowledge', () => ({
   buildKnowledgeModel: vi.fn(),
@@ -23,17 +24,18 @@ vi.mock('@/services/knowledge', () => ({
 }));
 
 vi.mock('@/components/knowledge/g6Loader', () => ({
-  loadG6Graph: vi.fn(async () =>
-    class {
-      public setData = vi.fn();
-      public render = vi.fn(async () => undefined);
-      public fitView = vi.fn(async () => undefined);
-      public zoomBy = vi.fn(async () => undefined);
-      public zoomTo = vi.fn(async () => undefined);
-      public resize = vi.fn();
-      public destroy = vi.fn();
-      public on = vi.fn();
-    },
+  loadG6Graph: vi.fn(
+    async () =>
+      class {
+        public setData = vi.fn();
+        public render = vi.fn(async () => undefined);
+        public fitView = vi.fn(async () => undefined);
+        public zoomBy = vi.fn(async () => undefined);
+        public zoomTo = vi.fn(async () => undefined);
+        public resize = vi.fn();
+        public destroy = vi.fn();
+        public on = vi.fn();
+      },
   ),
 }));
 
@@ -79,6 +81,15 @@ const baseModel: KnowledgeModelResponse = {
       created_at: '2026-01-01T00:00:00Z',
       updated_at: '2026-01-01T00:00:00Z',
     },
+    {
+      id: 22,
+      course_id: 7,
+      source_node_id: 1,
+      target_node_id: 2,
+      relation_type: 'prerequisite',
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:00:00Z',
+    },
   ],
 };
 
@@ -108,13 +119,64 @@ function mockedServices() {
   };
 }
 
-async function mountPanel(panelMaterials: Material[] = materials) {
+const baseStatus: KnowledgeBuildStatus = {
+  course_id: 7,
+  state: 'update_available',
+  stage: null,
+  job_id: null,
+  material_count: 1,
+  ready_material_count: 1,
+  node_count: 2,
+  contains_edge_count: 1,
+  prerequisite_edge_count: 1,
+  needs_update: true,
+  can_build: true,
+  has_model: true,
+  error_code: null,
+  error_message: null,
+  started_at: null,
+  completed_at: null,
+};
+
+async function mountPanel(
+  overrides: Partial<{
+    model: KnowledgeModelResponse | null;
+    modelState: 'loading' | 'ready' | 'error';
+    modelError: string;
+    status: KnowledgeBuildStatus | null;
+    isRunning: boolean;
+    materials: Material[];
+  }> = {},
+) {
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [
+      { path: '/courses/:courseId', name: 'course-detail', component: { template: '<div />' } },
+      {
+        path: '/courses/:courseId/knowledge/:nodeId',
+        name: 'knowledge-detail',
+        component: { template: '<div />' },
+      },
+    ],
+  });
+  await router.push('/courses/7?tab=knowledge-structure');
+  await router.isReady();
   const wrapper = mount(KnowledgeStructurePanel, {
-    props: { courseId: 7, materials: panelMaterials },
+    props: {
+      courseId: 7,
+      materials,
+      model: baseModel,
+      modelState: 'ready',
+      modelError: '',
+      status: baseStatus,
+      isRunning: false,
+      ...overrides,
+    },
+    global: { plugins: [router] },
   });
   await flushPromises();
   await flushPromises();
-  return wrapper;
+  return { wrapper, router };
 }
 
 describe('KnowledgeStructurePanel', () => {
@@ -128,108 +190,110 @@ describe('KnowledgeStructurePanel', () => {
   });
 
   it('shows a truthful empty state when no canonical nodes exist', async () => {
-    mockedServices().model.mockResolvedValue({ ...baseModel, nodes: [], edges: [] });
+    const { wrapper } = await mountPanel({
+      model: { ...baseModel, nodes: [], edges: [] },
+      status: { ...baseStatus, state: 'not_built', node_count: 0, has_model: false },
+    });
 
-    const wrapper = await mountPanel();
-
-    expect(wrapper.text()).toContain('尚未建立课程知识结构');
-    expect(wrapper.text()).toContain('建立知识结构');
+    expect(wrapper.text()).toContain('当前课程暂无已确认的知识点');
+    expect(wrapper.text()).toContain('生成课程知识结构');
   });
 
   it('shows a recoverable loading error when the model request fails', async () => {
-    mockedServices().model.mockRejectedValue(new ApiError('服务暂不可用。', { status: 500 }));
-
-    const wrapper = await mountPanel();
-
+    const { wrapper } = await mountPanel({
+      model: null,
+      modelState: 'error',
+      modelError: '服务暂不可用。',
+    });
     expect(wrapper.text()).toContain('课程知识结构加载失败');
-    expect(wrapper.text()).toContain('重新加载');
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('重试'))
+      ?.trigger('click');
+    expect(wrapper.emitted('retry')).toHaveLength(1);
   });
 
   it('allows a legacy extracted M2 material to start the build flow', async () => {
-    const services = mockedServices();
-    services.build.mockResolvedValue({
-      course_id: 7,
-      material_count: 1,
-      node_count: 2,
-      contains_edge_count: 1,
-      prerequisite_edge_count: 0,
-      reused: true,
+    const { wrapper } = await mountPanel({
+      materials: [{ ...materials[0]!, extraction_status: 'EXTRACTED' as const }],
     });
-    const legacyMaterials = [{ ...materials[0]!, extraction_status: 'EXTRACTED' as const }];
-
-    const wrapper = await mountPanel(legacyMaterials);
-    const buildButton = wrapper.findAll('button').find((button) => button.text().includes('更新知识结构'));
+    const buildButton = wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('更新知识结构'));
 
     expect(buildButton?.attributes('disabled')).toBeUndefined();
     await buildButton?.trigger('click');
-    await flushPromises();
-    expect(services.build).toHaveBeenCalledTimes(1);
+    expect(wrapper.emitted('build')).toHaveLength(1);
   });
 
-  it('builds once, refreshes the model, and keeps the UI in the course context', async () => {
-    const services = mockedServices();
-    services.build.mockResolvedValue({
-      course_id: 7,
-      material_count: 1,
-      node_count: 2,
-      contains_edge_count: 1,
-      prerequisite_edge_count: 0,
-      reused: false,
-    });
-    services.model.mockResolvedValue(baseModel);
-
-    const wrapper = await mountPanel();
-    const buildButton = wrapper.findAll('button').find((button) => button.text().includes('更新知识结构'));
-
-    expect(buildButton).toBeDefined();
-    await buildButton?.trigger('click');
+  it('renders one unified map and focuses nodes without leaving the course', async () => {
+    const scrollIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
+    const { wrapper, router } = await mountPanel();
+    expect(wrapper.text()).toContain('课程知识地图');
+    expect(wrapper.text()).toContain('课程知识导航');
+    expect(wrapper.text()).toContain('直接学习关系');
+    expect(wrapper.text()).not.toContain('层级视图');
+    expect(wrapper.text()).not.toContain('关系图视图');
+    expect(wrapper.text()).toContain('1 条层级关系');
+    expect(wrapper.text()).toContain('1 条先修关系');
+    const navigatorNode = wrapper.findAll('.knowledge-navigator__node')[1]!;
+    expect(navigatorNode.element.tagName).toBe('BUTTON');
+    await navigatorNode.trigger('click');
     await flushPromises();
+    expect(router.currentRoute.value.name).toBe('course-detail');
+    expect(router.currentRoute.value.query.nodeId).toBe('2');
+    expect(wrapper.find('.knowledge-preview h3').text()).toBe('线性变换');
+    expect(scrollIntoView).not.toHaveBeenCalled();
+  });
 
-    expect(services.build).toHaveBeenCalledTimes(1);
-    expect(services.model.mock.calls.length).toBeGreaterThanOrEqual(2);
-    expect(wrapper.text()).toContain('课程知识结构');
+  it('uses a valid URL nodeId and safely replaces an invalid one', async () => {
+    const { wrapper, router } = await mountPanel();
+    await router.replace('/courses/7?tab=knowledge-structure&nodeId=2');
+    await flushPromises();
+    expect(wrapper.find('.knowledge-preview h3').text()).toBe('线性变换');
+
+    await router.replace('/courses/7?tab=knowledge-structure&nodeId=999');
+    await flushPromises();
+    expect(router.currentRoute.value.query.nodeId).toBe('1');
+    expect(wrapper.find('.knowledge-preview h3').text()).toBe('向量');
+  });
+
+  it('searches and clears canonical nodes in the left navigator', async () => {
+    const { wrapper } = await mountPanel();
+    const input = wrapper.find('input[type="search"]');
+    await input.setValue('线性变换');
+    expect(wrapper.text()).toContain('找到 1 个匹配项');
+    await wrapper.find('.knowledge-navigator__search button').trigger('click');
+    expect((input.element as HTMLInputElement).value).toBe('');
+  });
+
+  it('opens full detail only through the explicit preview link', async () => {
+    const { wrapper } = await mountPanel();
+    const detailLink = wrapper.find('.knowledge-preview__detail');
+    expect(detailLink.attributes('href')).toBe('/courses/7/knowledge/1?from=knowledge-structure');
   });
 
   it('keeps the current model visible when an update fails', async () => {
-    const services = mockedServices();
-    services.build.mockRejectedValue(new ApiError('生成服务暂不可用。', { status: 502 }));
-
-    const wrapper = await mountPanel();
-    const buildButton = wrapper.findAll('button').find((button) => button.text().includes('更新知识结构'));
-
-    expect(wrapper.findAll('.knowledge-stat strong')[0]?.text()).toBe('2');
-
-    await buildButton?.trigger('click');
-    await flushPromises();
-
-    expect(wrapper.text()).toContain('更新知识结构失败，当前结果已保留');
+    const { wrapper } = await mountPanel({
+      status: {
+        ...baseStatus,
+        state: 'update_failed',
+        error_message: '生成服务暂不可用。',
+      },
+    });
+    expect(wrapper.text()).toContain('2 个知识点');
     expect(wrapper.text()).toContain('生成服务暂不可用。');
-    expect(wrapper.findAll('.knowledge-stat strong')[0]?.text()).toBe('2');
+    expect(wrapper.text()).toContain('重试更新');
   });
 
   it('reports a refresh failure after a build without claiming the update succeeded', async () => {
-    const services = mockedServices();
-    services.build.mockResolvedValue({
-      course_id: 7,
-      material_count: 1,
-      node_count: 2,
-      contains_edge_count: 1,
-      prerequisite_edge_count: 0,
-      reused: false,
+    const { wrapper } = await mountPanel({
+      modelError: '最新模型暂时不可读取。',
     });
-    services.model
-      .mockResolvedValueOnce(baseModel)
-      .mockRejectedValueOnce(new ApiError('最新模型暂时不可读取。', { status: 503 }));
-
-    const wrapper = await mountPanel();
-    const buildButton = wrapper.findAll('button').find((button) => button.text().includes('更新知识结构'));
-
-    await buildButton?.trigger('click');
-    await flushPromises();
-
-    expect(wrapper.text()).toContain('更新知识结构失败，当前结果已保留');
+    expect(wrapper.text()).toContain('当前仍展示已读取的知识结构');
     expect(wrapper.text()).toContain('最新模型暂时不可读取。');
-    expect(wrapper.findAll('.knowledge-stat strong')[0]?.text()).toBe('2');
+    expect(wrapper.text()).toContain('2 个知识点');
   });
 });
 

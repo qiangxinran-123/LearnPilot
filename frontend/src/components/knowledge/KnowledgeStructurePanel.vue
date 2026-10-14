@@ -1,360 +1,547 @@
 <script setup lang="ts">
-import { MagicStick, RefreshRight } from '@element-plus/icons-vue';
-import { ElMessage } from 'element-plus';
-import { computed, defineAsyncComponent, toRef } from 'vue';
+import { ArrowRight, MagicStick, RefreshRight, Search } from '@element-plus/icons-vue';
+import { computed, nextTick, ref, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
+import type { ElTree } from 'element-plus';
 
-import KnowledgeEdgeDetail from '@/components/knowledge/KnowledgeEdgeDetail.vue';
-import KnowledgeNodeDetail from '@/components/knowledge/KnowledgeNodeDetail.vue';
-import { useKnowledgeModel } from '@/composables/useKnowledgeModel';
+import { presentBuildStatus } from '@/components/knowledge/buildStatus';
+import KnowledgeFocusGraph from '@/components/knowledge/KnowledgeFocusGraph.vue';
+import {
+  adaptKnowledgeModelToFocus,
+  canonicalNodeIndex,
+  chooseDefaultFocusNodeId,
+  directParentNodes,
+} from '@/components/knowledge/knowledgeMapAdapter';
+import {
+  adaptKnowledgeModelToTree,
+  searchKnowledgeTree,
+  type KnowledgeTreeNode,
+} from '@/components/knowledge/treeAdapter';
 import type { Material } from '@/types/course';
-
-const KnowledgeGraph = defineAsyncComponent(
-  () => import('@/components/knowledge/KnowledgeGraph.vue'),
-);
+import type { KnowledgeBuildStatus, KnowledgeModelResponse } from '@/types/knowledge';
 
 const props = defineProps<{
   courseId: number;
   materials: Material[];
+  model: KnowledgeModelResponse | null;
+  modelState: 'loading' | 'ready' | 'error';
+  modelError: string;
+  status: KnowledgeBuildStatus | null;
+  isRunning: boolean;
 }>();
+const emit = defineEmits<{ retry: []; build: [] }>();
+const route = useRoute();
+const router = useRouter();
+const treeRef = ref<InstanceType<typeof ElTree>>();
+const search = ref('');
+const focusNodeId = ref<number | null>(null);
 
-const {
-  state,
-  model,
-  errorMessage,
-  buildErrorMessage,
-  isBuilding,
-  selectedNodeDetail,
-  isNodeDetailOpen,
-  isNodeDetailLoading,
-  selectedEdge,
-  isEdgeDetailOpen,
-  visibility,
-  nodeCount,
-  containsCount,
-  prerequisiteCount,
-  load,
-  build,
-  selectNode,
-  selectEdge,
-  edgeEvidence,
-} = useKnowledgeModel(toRef(props, 'courseId'));
-
-const canBuild = computed(() =>
-  props.materials.some(
-    (material) =>
-      material.extraction_status === 'SUCCESS' || material.extraction_status === 'EXTRACTED',
-  ),
+const hasNodes = computed(() => (props.model?.nodes.length ?? 0) > 0);
+const treeData = computed(() => (props.model ? adaptKnowledgeModelToTree(props.model) : null));
+const searchResult = computed(() => searchKnowledgeTree(treeData.value?.roots ?? [], search.value));
+const matches = computed(() =>
+  [...searchResult.value.matchedIds]
+    .map((id) => treeData.value?.nodeById.get(id))
+    .filter((node): node is KnowledgeTreeNode => node !== undefined),
 );
-const hasNodes = computed(() => (model.value?.nodes.length ?? 0) > 0);
-const buildLabel = computed(() => (hasNodes.value ? '更新知识结构' : '建立知识结构'));
+const focusData = computed(() =>
+  props.model
+    ? adaptKnowledgeModelToFocus(props.model, focusNodeId.value)
+    : {
+        focusNode: null,
+        prerequisiteNodes: [],
+        dependentNodes: [],
+        prerequisiteEdges: [],
+        dependentEdges: [],
+        ignoredEdgeIds: [],
+      },
+);
+const parentTopics = computed(() =>
+  props.model && focusNodeId.value !== null
+    ? directParentNodes(props.model, focusNodeId.value)
+    : [],
+);
+const containsCount = computed(
+  () => props.model?.edges.filter((edge) => edge.relation_type === 'contains').length ?? 0,
+);
+const prerequisiteCount = computed(
+  () => props.model?.edges.filter((edge) => edge.relation_type === 'prerequisite').length ?? 0,
+);
+const buildPresentation = computed(() => (props.status ? presentBuildStatus(props.status) : null));
+const detailRoute = computed(() => ({
+  name: 'knowledge-detail',
+  params: { courseId: props.courseId, nodeId: focusNodeId.value },
+  query: { from: 'knowledge-structure' },
+}));
 
-async function handleBuild(): Promise<void> {
-  const succeeded = await build();
-  if (succeeded) {
-    ElMessage.success('课程知识结构已更新。');
-  }
+function queryNodeId(): number | null {
+  const raw = Array.isArray(route.query.nodeId) ? route.query.nodeId[0] : route.query.nodeId;
+  const value = Number(raw);
+  return Number.isInteger(value) && value > 0 ? value : null;
 }
+function filterTreeNode(_query: string, node: KnowledgeTreeNode): boolean {
+  return !search.value.trim() || searchResult.value.visibleIds.has(node.id);
+}
+function locateNode(nodeId: number): void {
+  let parentId = treeData.value?.parentIdByNodeId.get(nodeId);
+  while (parentId !== undefined) {
+    treeRef.value?.getNode(parentId)?.expand();
+    parentId = treeData.value?.parentIdByNodeId.get(parentId);
+  }
+  treeRef.value?.setCurrentKey(nodeId);
+}
+async function replaceFocusQuery(nodeId: number): Promise<void> {
+  const query: Record<string, string | string[]> = {
+    ...route.query,
+    tab: 'knowledge-structure',
+    nodeId: String(nodeId),
+  };
+  delete query.view;
+  await router.replace({ name: 'course-detail', params: { courseId: props.courseId }, query });
+}
+function focusNode(nodeId: number): void {
+  if (!props.model || !canonicalNodeIndex(props.model).has(nodeId)) return;
+  focusNodeId.value = nodeId;
+  locateNode(nodeId);
+  if (queryNodeId() !== nodeId) void replaceFocusQuery(nodeId);
+}
+function clearSearch(): void {
+  search.value = '';
+}
+
+watch(search, async () => {
+  await nextTick();
+  treeRef.value?.filter(search.value);
+  for (const id of searchResult.value.expandedIds) treeRef.value?.getNode(id)?.expand();
+});
+watch(
+  [() => props.courseId, () => props.model, () => route.query.nodeId],
+  async () => {
+    if (!props.model) {
+      focusNodeId.value = null;
+      return;
+    }
+    const nodeById = canonicalNodeIndex(props.model);
+    const requested = queryNodeId();
+    const nextId =
+      requested !== null && nodeById.has(requested)
+        ? requested
+        : chooseDefaultFocusNodeId(props.model);
+    focusNodeId.value = nextId;
+    await nextTick();
+    if (nextId !== null) {
+      locateNode(nextId);
+      if (requested !== nextId) await replaceFocusQuery(nextId);
+    }
+  },
+  { immediate: true },
+);
 </script>
 
 <template>
-  <section class="knowledge-structure" aria-labelledby="knowledge-structure-heading">
-    <header class="knowledge-structure__header">
+  <section class="knowledge-map" aria-labelledby="knowledge-map-heading">
+    <header class="knowledge-map__header">
       <div>
-        <p class="knowledge-structure__eyebrow">Course Knowledge Model</p>
-        <h2 id="knowledge-structure-heading">课程知识结构</h2>
-        <p>查看课程知识点之间的层级与先修关系。</p>
+        <h2 id="knowledge-map-heading">课程知识地图</h2>
+        <p>从课程主题中找到知识点，沿真实的直接先修关系逐步探索。</p>
       </div>
-      <div class="knowledge-structure__actions">
-        <el-tooltip
-          :disabled="canBuild"
-          content="请先上传并完成至少一份课程资料的解析。"
-          placement="top"
-        >
-          <span>
-            <el-button
-              type="primary"
-              :loading="isBuilding"
-              :disabled="!canBuild || isBuilding"
-              @click="handleBuild"
-            >
-              <el-icon><RefreshRight v-if="hasNodes" /><MagicStick v-else /></el-icon>
-              {{ isBuilding ? '正在分析课程资料并建立知识结构…' : buildLabel }}
-            </el-button>
-          </span>
-        </el-tooltip>
-      </div>
+      <el-button
+        v-if="buildPresentation?.action && status?.can_build"
+        type="primary"
+        :disabled="isRunning"
+        :loading="isRunning"
+        @click="emit('build')"
+      >
+        <el-icon><RefreshRight v-if="hasNodes" /><MagicStick v-else /></el-icon
+        >{{ buildPresentation.action }}
+      </el-button>
     </header>
-
-    <p v-if="isBuilding" class="knowledge-structure__build-status" role="status" aria-live="polite">
-      正在分析课程资料并建立知识结构…
+    <p v-if="isRunning" class="knowledge-map__status" role="status">
+      {{ buildPresentation?.detail || '正在构建课程知识结构…' }}
     </p>
-    <el-alert
-      v-if="buildErrorMessage"
-      title="更新知识结构失败，当前结果已保留"
-      :description="buildErrorMessage"
-      type="error"
-      :closable="false"
-      show-icon
-      class="knowledge-structure__alert"
-    />
+    <p
+      v-if="status?.state === 'failed' || status?.state === 'update_failed'"
+      class="knowledge-map__warning"
+      role="alert"
+    >
+      {{ buildPresentation?.detail }}
+    </p>
+    <p v-if="modelError && model" class="knowledge-map__warning" role="alert">
+      最新结果加载失败，当前仍展示已读取的知识结构：{{ modelError }}
+    </p>
 
-    <section v-if="state === 'loading' && !model" class="knowledge-structure__loading" aria-label="正在加载课程知识结构">
-      <el-skeleton animated>
-        <template #template>
-          <el-skeleton-item variant="p" style="width: 24%; margin-bottom: 1rem" />
-          <el-skeleton-item variant="rect" style="height: 34rem; border-radius: 18px" />
-        </template>
-      </el-skeleton>
-    </section>
+    <div v-if="modelState === 'loading' && !model" class="knowledge-map__message" role="status">
+      正在加载课程知识结构…
+    </div>
+    <div v-else-if="modelState === 'error' && !model" class="knowledge-map__message" role="alert">
+      <p>课程知识结构加载失败：{{ modelError }}</p>
+      <el-button @click="emit('retry')">重试</el-button>
+    </div>
+    <div v-else-if="!hasNodes" class="knowledge-map__message">
+      <p>当前课程暂无已确认的知识点。请先上传可解析资料，再主动生成知识结构。</p>
+    </div>
 
-    <section v-else-if="state === 'error' && !model" class="knowledge-structure__error">
-      <el-result icon="error" title="课程知识结构加载失败" :sub-title="errorMessage">
-        <template #extra>
-          <el-button type="primary" @click="load()">重新加载</el-button>
-        </template>
-      </el-result>
-    </section>
+    <template v-else-if="model && treeData && focusData.focusNode">
+      <div class="knowledge-map__summary" aria-label="课程知识统计">
+        <span
+          ><strong>{{ model.nodes.length }}</strong> 个知识点</span
+        ><span
+          ><strong>{{ containsCount }}</strong> 条层级关系</span
+        ><span
+          ><strong>{{ prerequisiteCount }}</strong> 条先修关系</span
+        >
+      </div>
+      <div class="knowledge-map__workspace">
+        <aside class="knowledge-navigator" aria-labelledby="knowledge-navigator-heading">
+          <div class="knowledge-navigator__heading">
+            <div>
+              <h3 id="knowledge-navigator-heading">课程知识导航</h3>
+              <p>{{ treeData.roots.length }} 个顶层主题</p>
+            </div>
+          </div>
+          <label class="knowledge-navigator__search"
+            ><span class="visually-hidden">搜索课程知识点</span
+            ><el-icon aria-hidden="true"><Search /></el-icon
+            ><input
+              v-model="search"
+              type="search"
+              maxlength="120"
+              placeholder="搜索知识点"
+            /><button v-if="search" type="button" @click="clearSearch">清空</button></label
+          >
+          <p v-if="search.trim() && !matches.length" class="knowledge-navigator__empty">
+            没有找到匹配的知识点。
+          </p>
+          <div v-else class="knowledge-navigator__tree">
+            <p v-if="search.trim()" class="knowledge-navigator__result-count">
+              找到 {{ matches.length }} 个匹配项
+            </p>
+            <el-tree
+              ref="treeRef"
+              :data="treeData.roots"
+              node-key="id"
+              :props="{ label: 'label', children: 'children' }"
+              :default-expanded-keys="treeData.roots.map((node) => node.id)"
+              :current-node-key="focusNodeId"
+              :filter-node-method="filterTreeNode"
+              highlight-current
+              @node-click="(node: KnowledgeTreeNode) => focusNode(node.id)"
+            >
+              <template #default="{ data }">
+                <button
+                  type="button"
+                  class="knowledge-navigator__node"
+                  :data-knowledge-tree-id="data.id"
+                  :aria-current="data.id === focusNodeId ? 'true' : undefined"
+                  @click.stop="focusNode(data.id)"
+                >
+                  {{ data.label }}
+                </button>
+              </template>
+            </el-tree>
+          </div>
+          <p v-if="treeData.ignoredEdgeIds.length" class="knowledge-map__warning" role="status">
+            {{ treeData.ignoredEdgeIds.length }} 条异常层级关系未展示，知识点仍保留在导航中。
+          </p>
+        </aside>
 
-    <section v-else-if="model && !hasNodes" class="knowledge-structure__empty">
-      <el-empty description="尚未建立课程知识结构" :image-size="112">
-        <template #description>
-          <p>尚未建立课程知识结构</p>
-          <p class="knowledge-structure__empty-copy">上传并完成课程资料解析后，即可在这里建立可追溯的知识结构。</p>
-        </template>
-        <el-button v-if="canBuild" type="primary" :loading="isBuilding" @click="handleBuild">
-          <el-icon><MagicStick /></el-icon>建立知识结构
-        </el-button>
-      </el-empty>
-    </section>
-
-    <template v-else-if="model">
-      <section class="knowledge-structure__overview" aria-label="知识结构概览">
-        <div class="knowledge-stat">
-          <strong>{{ nodeCount }}</strong>
-          <span>知识点</span>
-        </div>
-        <div class="knowledge-stat">
-          <strong>{{ containsCount }}</strong>
-          <span>层级关系</span>
-        </div>
-        <div class="knowledge-stat">
-          <strong>{{ prerequisiteCount }}</strong>
-          <span>先修关系</span>
-        </div>
-        <div class="knowledge-structure__filters" aria-label="关系筛选">
-          <el-switch v-model="visibility.contains" inline-prompt active-text="层级" inactive-text="层级" />
-          <el-switch
-            v-model="visibility.prerequisite"
-            inline-prompt
-            active-text="先修"
-            inactive-text="先修"
-          />
-        </div>
-      </section>
-
-      <section class="knowledge-structure__legend" aria-label="关系图例">
-        <span><i class="legend-line contains" aria-hidden="true" />层级关系：父概念指向子概念</span>
-        <span><i class="legend-line prerequisite" aria-hidden="true" />先修关系：先修知识指向依赖知识</span>
-      </section>
-
-      <KnowledgeGraph
-        :model="model"
-        :visibility="visibility"
-        @select-node="selectNode"
-        @select-edge="selectEdge"
-      />
+        <main class="knowledge-map__main">
+          <KnowledgeFocusGraph :data="focusData" @focus="focusNode" />
+          <p v-if="focusData.ignoredEdgeIds.length" class="knowledge-map__warning" role="status">
+            {{ focusData.ignoredEdgeIds.length }} 条异常先修关系未展示。
+          </p>
+          <section class="knowledge-preview" aria-labelledby="knowledge-preview-heading">
+            <div class="knowledge-preview__content">
+              <p class="knowledge-preview__label">当前知识点</p>
+              <h3 id="knowledge-preview-heading">{{ focusData.focusNode.name }}</h3>
+              <div v-if="parentTopics.length" class="knowledge-preview__topics">
+                <span>属于</span
+                ><button
+                  v-for="topic in parentTopics"
+                  :key="topic.id"
+                  type="button"
+                  @click="focusNode(topic.id)"
+                >
+                  {{ topic.name }}
+                </button>
+              </div>
+              <p>{{ focusData.focusNode.description || '当前知识点尚无已保存的简短说明。' }}</p>
+            </div>
+            <RouterLink class="knowledge-preview__detail" :to="detailRoute"
+              >查看完整知识详情 <el-icon aria-hidden="true"><ArrowRight /></el-icon
+            ></RouterLink>
+          </section>
+        </main>
+      </div>
     </template>
-
-    <KnowledgeNodeDetail
-      v-model="isNodeDetailOpen"
-      :detail="selectedNodeDetail"
-      :materials="materials"
-      :loading="isNodeDetailLoading"
-    />
-    <KnowledgeEdgeDetail
-      v-model="isEdgeDetailOpen"
-      :edge="selectedEdge"
-      :nodes="model?.nodes ?? []"
-      :evidence="selectedEdge ? edgeEvidence(selectedEdge.id) : []"
-      :materials="materials"
-    />
-
-    <p v-if="state === 'ready' && errorMessage" class="knowledge-structure__soft-error" role="status">
-      {{ errorMessage }}
-    </p>
   </section>
 </template>
 
 <style scoped>
-.knowledge-structure {
-  display: grid;
-  gap: 1.15rem;
+.knowledge-map {
+  min-width: 0;
+  padding-top: var(--lp-space-3);
 }
-
-.knowledge-structure__header {
+.knowledge-map__header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 1.25rem;
+  gap: var(--lp-space-5);
 }
-
-.knowledge-structure__eyebrow {
-  margin: 0 0 0.36rem;
-  color: #6f7f9c;
-  font-size: 0.72rem;
-  font-weight: 750;
-  letter-spacing: 0.11em;
-  text-transform: uppercase;
-}
-
-.knowledge-structure__header h2 {
+.knowledge-map__header h2,
+.knowledge-navigator h3,
+.knowledge-preview h3 {
   margin: 0;
-  color: #203451;
-  font-family: var(--lp-font-display, inherit);
-  font-size: clamp(1.35rem, 2vw, 1.7rem);
+  color: var(--lp-ink);
 }
-
-.knowledge-structure__header p:not(.knowledge-structure__eyebrow) {
-  margin: 0.52rem 0 0;
-  color: #667792;
+.knowledge-map__header p,
+.knowledge-navigator__heading p {
+  margin: 0.35rem 0 0;
+  color: var(--lp-text-secondary);
+  line-height: 1.6;
 }
-
-.knowledge-structure__actions {
-  flex: 0 0 auto;
-}
-
-.knowledge-structure__build-status {
-  margin: -0.45rem 0 0;
-  color: #4b669d;
-  font-size: 0.88rem;
-}
-
-.knowledge-structure__alert {
-  margin: 0;
-}
-
-.knowledge-structure__overview {
-  display: flex;
-  align-items: stretch;
-  gap: 0.7rem;
-  flex-wrap: wrap;
-}
-
-.knowledge-stat {
-  display: grid;
-  min-width: 7.1rem;
+.knowledge-map__status,
+.knowledge-map__warning,
+.knowledge-map__message {
+  margin-top: var(--lp-space-4);
   padding: 0.75rem 0.9rem;
-  border: 1px solid #dfe7f2;
-  border-radius: 12px;
-  background: #fbfcff;
+  border-radius: var(--lp-radius-md);
 }
-
-.knowledge-stat strong {
-  color: #2b4f94;
-  font-size: 1.13rem;
+.knowledge-map__status {
+  color: #315b91;
+  background: #edf4ff;
 }
-
-.knowledge-stat span {
-  margin-top: 0.18rem;
-  color: #6c7c97;
+.knowledge-map__warning {
+  color: #795920;
+  background: #fff7e7;
+}
+.knowledge-map__message {
+  display: grid;
+  justify-items: start;
+  gap: var(--lp-space-3);
+  min-height: 12rem;
+  align-content: center;
+  color: var(--lp-text-secondary);
+}
+.knowledge-map__message p {
+  margin: 0;
+}
+.knowledge-map__summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--lp-space-4);
+  margin: var(--lp-space-5) 0 var(--lp-space-4);
+  color: var(--lp-text-secondary);
+  font-size: 0.82rem;
+}
+.knowledge-map__summary strong {
+  color: var(--lp-ink);
+}
+.knowledge-map__workspace {
+  display: grid;
+  grid-template-columns: minmax(240px, 28%) minmax(0, 1fr);
+  align-items: start;
+  gap: var(--lp-space-4);
+}
+.knowledge-navigator {
+  position: sticky;
+  top: var(--lp-space-4);
+  min-width: 0;
+  max-height: min(70vh, 46rem);
+  padding: var(--lp-space-4);
+  overflow: hidden;
+  border: 1px solid var(--lp-border);
+  border-radius: var(--lp-radius-lg);
+  background: var(--lp-surface);
+}
+.knowledge-navigator__heading {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--lp-space-3);
+}
+.knowledge-navigator__heading h3 {
+  font-size: 1rem;
+}
+.knowledge-navigator__heading p {
+  font-size: 0.75rem;
+}
+.knowledge-navigator__search {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: var(--lp-space-4);
+  padding: 0.55rem 0.65rem;
+  border: 1px solid var(--lp-border);
+  border-radius: var(--lp-radius-md);
+  color: var(--lp-text-secondary);
+  background: var(--lp-canvas);
+}
+.knowledge-navigator__search:focus-within {
+  border-color: var(--lp-primary);
+  box-shadow: 0 0 0 3px rgb(61 111 183 / 12%);
+}
+.knowledge-navigator__search input {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  outline: 0;
+  color: var(--lp-text);
+  background: transparent;
+}
+.knowledge-navigator__search button {
+  padding: 0;
+  border: 0;
+  color: var(--lp-primary);
+  background: transparent;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+.knowledge-navigator__tree {
+  max-height: calc(min(70vh, 46rem) - 8rem);
+  margin-top: var(--lp-space-3);
+  overflow: auto;
+  scrollbar-width: thin;
+}
+.knowledge-navigator__result-count,
+.knowledge-navigator__empty {
+  margin: var(--lp-space-3) 0;
+  color: var(--lp-text-secondary);
   font-size: 0.78rem;
 }
-
-.knowledge-structure__filters {
+.knowledge-navigator :deep(.el-tree) {
+  --el-tree-node-hover-bg-color: #f2f6fc;
+  background: transparent;
+}
+.knowledge-navigator :deep(.el-tree-node__content) {
+  min-height: 2.35rem;
+  height: auto;
+  border-radius: 8px;
+}
+.knowledge-navigator :deep(.el-tree-node.is-current > .el-tree-node__content) {
+  color: var(--lp-primary);
+  background: #eaf2ff;
+  font-weight: 700;
+}
+.knowledge-navigator__node {
+  border: 0;
+  min-width: 0;
+  padding: 0.35rem 0.2rem;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+.knowledge-navigator__node:focus-visible {
+  border-radius: 5px;
+  outline: 2px solid var(--lp-primary);
+  outline-offset: 2px;
+}
+.knowledge-map__main {
+  display: grid;
+  min-width: 0;
+  gap: var(--lp-space-4);
+}
+.knowledge-preview {
   display: flex;
   align-items: center;
-  gap: 0.7rem;
-  margin-left: auto;
-  padding: 0.45rem 0.1rem;
+  justify-content: space-between;
+  gap: var(--lp-space-5);
+  min-width: 0;
+  padding: var(--lp-space-5);
+  border: 1px solid var(--lp-border);
+  border-radius: var(--lp-radius-lg);
+  background: var(--lp-surface);
+  box-shadow: var(--lp-shadow-sm);
 }
-
-.knowledge-structure__legend {
+.knowledge-preview__content {
+  min-width: 0;
+}
+.knowledge-preview__label {
+  margin: 0 0 0.25rem !important;
+  color: var(--lp-primary) !important;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+.knowledge-preview h3 {
+  font-size: 1.15rem;
+}
+.knowledge-preview p {
+  max-width: 48rem;
+  margin: 0.65rem 0 0;
+  color: var(--lp-text-secondary);
+  line-height: 1.7;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.knowledge-preview__topics {
   display: flex;
   flex-wrap: wrap;
-  gap: 1rem 1.4rem;
-  color: #5f708c;
-  font-size: 0.83rem;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.55rem;
+  color: var(--lp-text-secondary);
+  font-size: 0.78rem;
 }
-
-.knowledge-structure__legend span {
+.knowledge-preview__topics button {
+  padding: 0.2rem 0.5rem;
+  border: 1px solid #ccd9eb;
+  border-radius: 999px;
+  color: var(--lp-primary);
+  background: #f7faff;
+  cursor: pointer;
+}
+.knowledge-preview__detail {
   display: inline-flex;
+  flex: 0 0 auto;
   align-items: center;
   gap: 0.45rem;
+  padding: 0.72rem 1rem;
+  border-radius: var(--lp-radius-md);
+  color: #fff;
+  background: var(--lp-primary);
+  font-weight: 700;
+  text-decoration: none;
 }
-
-.legend-line {
-  position: relative;
-  display: inline-block;
-  width: 2.15rem;
-  height: 0;
-  border-top: 2px solid #91a1ba;
+.knowledge-preview__detail:hover {
+  filter: brightness(0.95);
 }
-
-.legend-line::after {
-  position: absolute;
-  top: -5px;
-  right: -1px;
-  width: 0;
-  height: 0;
-  border-top: 4px solid transparent;
-  border-bottom: 4px solid transparent;
-  border-left: 6px solid currentColor;
-  content: '';
+.knowledge-preview__detail:focus-visible,
+.knowledge-preview__topics button:focus-visible,
+.knowledge-navigator__search button:focus-visible {
+  outline: 3px solid rgb(61 111 183 / 25%);
+  outline-offset: 2px;
 }
-
-.legend-line.contains {
-  color: #91a1ba;
-}
-
-.legend-line.prerequisite {
-  border-top-style: dashed;
-  border-color: #5874d1;
-  color: #5874d1;
-}
-
-.knowledge-structure__loading,
-.knowledge-structure__error,
-.knowledge-structure__empty {
-  min-height: 25rem;
-  padding: 1.2rem;
-  border: 1px solid #e0e7f1;
-  border-radius: 18px;
-  background: #fbfdff;
-}
-
-.knowledge-structure__error,
-.knowledge-structure__empty {
-  display: grid;
-  place-items: center;
-}
-
-.knowledge-structure__empty-copy {
-  max-width: 31rem;
-  margin: 0.55rem auto 0;
-  color: #697994;
-  line-height: 1.65;
-}
-
-.knowledge-structure__soft-error {
-  margin: 0;
-  color: #af5047;
-  font-size: 0.88rem;
-}
-
-@media (max-width: 767px) {
-  .knowledge-structure__header {
-    flex-direction: column;
+@media (max-width: 960px) {
+  .knowledge-map__workspace {
+    grid-template-columns: 1fr;
   }
-
-  .knowledge-structure__actions,
-  .knowledge-structure__actions :deep(.el-button) {
-    width: 100%;
+  .knowledge-navigator {
+    position: static;
+    max-height: none;
   }
-
-  .knowledge-structure__filters {
+  .knowledge-navigator__tree {
+    max-height: 22rem;
+  }
+}
+@media (max-width: 600px) {
+  .knowledge-map__header,
+  .knowledge-preview {
+    display: grid;
+  }
+  .knowledge-map__header :deep(.el-button),
+  .knowledge-preview__detail {
     width: 100%;
-    justify-content: flex-start;
-    margin-left: 0;
+    justify-content: center;
+  }
+  .knowledge-map__workspace {
+    gap: var(--lp-space-3);
+  }
+  .knowledge-navigator,
+  .knowledge-preview {
+    padding: var(--lp-space-4);
   }
 }
 </style>

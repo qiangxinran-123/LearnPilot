@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -129,6 +130,14 @@ class KnowledgeModelResponse(BaseModel):
     edges: list[KnowledgeEdgeResponse]
 
 
+class KnowledgeNodeBrowseResponse(BaseModel):
+    course_id: int
+    total: int
+    offset: int
+    limit: int
+    nodes: list[KnowledgeNodeResponse]
+
+
 class KnowledgeModelBuildResponse(BaseModel):
     course_id: int
     material_count: int
@@ -136,6 +145,41 @@ class KnowledgeModelBuildResponse(BaseModel):
     contains_edge_count: int
     prerequisite_edge_count: int
     reused: bool
+
+
+class KnowledgeBuildJobResponse(BaseModel):
+    job_id: int
+    status: Literal["running", "success"]
+    stage: Literal["queued", "extracting", "canonicalizing", "relationships", "complete"] | None
+    reused: bool
+
+
+class KnowledgeBuildStatusResponse(BaseModel):
+    course_id: int
+    state: Literal[
+        "no_materials",
+        "not_ready",
+        "not_built",
+        "running",
+        "ready",
+        "update_available",
+        "failed",
+        "update_failed",
+    ]
+    stage: Literal["queued", "extracting", "canonicalizing", "relationships"] | None
+    job_id: int | None
+    material_count: int
+    ready_material_count: int
+    node_count: int
+    contains_edge_count: int
+    prerequisite_edge_count: int
+    needs_update: bool
+    can_build: bool
+    has_model: bool
+    error_code: str | None
+    error_message: str | None
+    started_at: datetime | None
+    completed_at: datetime | None
 
 
 class KnowledgeNodeDetailResponse(BaseModel):

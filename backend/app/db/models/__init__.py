@@ -1,4 +1,5 @@
 from backend.app.db.models.course import Course
+from backend.app.db.models.course_knowledge_build_state import CourseKnowledgeBuildState
 from backend.app.db.models.knowledge_candidate import KnowledgeCandidate
 from backend.app.db.models.knowledge_candidate_resolution import KnowledgeCandidateResolution
 from backend.app.db.models.knowledge_candidate_source import KnowledgeCandidateSource
@@ -17,6 +18,7 @@ from backend.app.db.models.user import User
 
 __all__ = [
     "Course",
+    "CourseKnowledgeBuildState",
     "KnowledgeCandidate",
     "KnowledgeCandidateResolution",
     "KnowledgeCandidateSource",

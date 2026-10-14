@@ -1,134 +1,128 @@
-# LearnPilot V1 — M3-E Implementation Report
+# M3-E Implementation Report
 
-## Actual Changes
+## 1. Stage goal
 
-M3-E adds a course-local, inspectable view of the completed M3 Course Knowledge Model. It is implemented inside the existing Course Detail workspace as a new `课程知识结构` tab; it does not add a global knowledge-graph route or navigation entry.
+Deliver a product-ready course learning workspace over verified M2 and M3-A through M3-D capabilities, with direct canonical knowledge discovery, a dedicated detail route, hierarchy-first exploration, and a durable build/update loop.
 
-The delivered work includes a typed frontend data boundary, a lazy real graph canvas, node and edge detail drawers, provenance/evidence presentation, local relation filters, responsive graph controls, and one thin course-level build endpoint. It consumes the persisted M3-A through M3-D model rather than recreating any extraction, canonicalization, hierarchy, or prerequisite logic in the client.
+## 2. Audit findings
 
-M3-E adds no Student Model, mastery, confidence, learner progress, recommendation, assessment, graph editing, coordinate persistence, graph database, vector store, or additional knowledge-generation algorithm.
+- The repository began this iteration clean on main.
+- Backend baseline: 139 tests passed; Ruff lint and format passed.
+- Frontend baseline: typecheck, lint, 31 tests, and production build passed.
+- Frontend Prettier baseline failed on 24 existing files. The configured formatter was applied mechanically; the final whole-project format check passes.
+- Prior course detail had two local tabs and defaulted to materials.
+- Prior M3-E had a graph and synchronous course build, but no persisted course-level job status, reload recovery, bounded canonical browse, overview, hierarchy-first view, or independent detail page.
+- Existing M2 material summary/cards/Q&A are single-material scoped and remain labelled that way.
 
-## Frontend Dependencies
+## 3. Reused capabilities
 
-`@antv/g6` is added at the exact version `5.1.1` and is the sole graph-rendering library. The package lock is updated consistently with that dependency.
+- Existing course/material persistence, upload, parsing, and ownership.
+- Existing material content, summary, study cards, and grounded single-material Q&A.
+- M3-B extraction services and run history.
+- M3-C canonicalization, candidate resolutions, node/source persistence, and idempotency.
+- M3-D relationship generation, forest/DAG checks, relationship evidence, and current publication.
+- Existing G6 lazy loader and graph adapter.
 
-`KnowledgeGraph.vue` loads G6 through `g6Loader.ts` using a dynamic import. The Vite manual chunk rule puts AntV modules into `knowledge-graph-vendor`, so the graph runtime is not loaded by the normal Course Detail material view. The graph adapter is library-neutral and does not expose G6 runtime types through API or domain contracts.
+No M3-B/C/D prompt or inference algorithm was reimplemented in the frontend or new orchestration layer.
 
-The production build reports the G6 vendor bundle-size advisory, but it is a lazily loaded visualization chunk rather than an initial-course-view dependency. This is documented as a non-blocking bundle warning, not hidden or suppressed.
+## 4. Main changes
 
-## Frontend Design Workflow
+### Backend
 
-The requested `frontend-design` skill is not available in this environment. The available `frontend-app-builder` skill was used instead to guide the M3-E visual work: a calm, course-local information layout, compact overview counters, a legible hierarchy/dependency canvas, and clear detail drawers without adding a separate dashboard or product surface.
+- Added course_knowledge_build_states, repository, migration, job service, heartbeat lease, material snapshots, checkpoint rollback, and stale-run recovery.
+- Added asynchronous 202 build-job and durable status endpoints.
+- Added bounded canonical-node browse/search.
+- Added optional canonical-only filtering to the existing knowledge-model endpoint.
+- Strengthened failed update restoration to preserve prior node fields and provenance, not only publication flags.
 
-## Knowledge Structure UI
+### Frontend
 
-`CourseDetailView` now has two lazy tabs:
+- Course default tab is now 学习概览; URL queries restore overview/materials/structure and tree/graph state.
+- Added real status banner, three statistics, three permanent task cards, bounded search, empty/error/loading states, and full-list pagination.
+- Added independent knowledge detail with concept, four relation directions, node sources, edge evidence, material links, and existing learning actions.
+- Added a multi-root hierarchy view and retained the real relationship graph as the auxiliary mode.
+- Added persisted polling, stale-request protection, and conservative model retention during updates.
+- Material detail now honors tab/source query state and reloads safely on route-param changes.
 
-- `课程资料`, preserving the existing M2 workflow;
-- `课程知识结构`, which mounts `KnowledgeStructurePanel` only while active.
+### Demonstration assets
 
-The panel uses the existing shared HTTP client and the typed `KnowledgeNode`, `KnowledgeEdge`, `KnowledgeSource`, edge-evidence, relationship-run, and build-result contracts in `frontend/src/types/knowledge.ts`. It renders:
+- Added two small linear-algebra text notes under docs/demo. They contain course content only and were uploaded through the same normal material API as user files.
 
-- node, `CONTAINS`, and `PREREQUISITE` counts from the loaded model;
-- independently toggled local relation filters;
-- an explicit Chinese legend for both directed relation semantics;
-- truthful loading, empty, error, disabled-build, in-progress, and update-failure states;
-- a build/update control enabled after at least one current `SUCCESS` or retained M2 `EXTRACTED` parsed course material is available.
+## 5. API and migration
 
-The UI intentionally contains no mastery, confidence, student status, completion, recommendation, or persisted presentation field.
+New endpoints:
 
-## Graph Adapter and Visualization
+- GET /api/courses/{course_id}/knowledge-nodes?q=&offset=&limit=
+- GET /api/courses/{course_id}/knowledge-model/build-status
+- POST /api/courses/{course_id}/knowledge-model/build-jobs (202)
 
-`graphAdapter.ts` transforms the API model into a small local rendering shape while preserving real backend IDs. It validates displayed endpoints and relation types defensively, rejects malformed self/unknown edges from the canvas, and never creates a synthetic course, domain, category, or fallback root node.
+Extended endpoint:
 
-Layout is deterministic and derived only from `CONTAINS` edges. Multiple real roots and disconnected concepts remain real top-level components; components are packed into bounded rows for readable fit-to-view behavior. `PREREQUISITE` edges do not influence hierarchy layout.
+- GET /api/courses/{course_id}/knowledge-model?canonical_only=true
 
-The visual semantics are explicit:
+Existing synchronous POST /knowledge-model/build remains for compatibility.
 
-- `CONTAINS`: solid muted directed edge, parent/broader concept to child/specific concept;
-- `PREREQUISITE`: blue dashed directed overlay, required prior knowledge to dependent knowledge.
+Migration 0007_m3e_workspace_build_state adds only the durable per-course build state and cascades with course deletion. Fresh SQLite migration and 0006_m3d_relationships → head both passed.
 
-The real G6 canvas supports drag-to-pan, wheel/gesture zoom, explicit zoom in/out, fit-to-view, reset, resize handling, and node/edge click selection. A visible fallback appears if the runtime graph cannot render.
+## 6. Delivered product behavior
 
-## Provenance and Detail Drawers
+- Overview: real identity/status/counts, three functional task cards, direct canonical search/detail, pagination.
+- Materials: existing upload/content/summary/cards/single-material Q&A preserved.
+- Detail: canonical guard, concept, hierarchy vs prerequisite groups, node provenance, relationship evidence, safe material fallbacks.
+- Structure: hierarchy default, multi-root/isolated handling, expand/search/locate, real graph, filters, zoom/drag/fit/reset, unified detail navigation.
+- Build/update: user-triggered persisted job, real stages, duplicate protection, reload recovery, material-change detection, safe rollback.
 
-Clicking a graph node uses `GET /api/courses/{course_id}/knowledge-nodes/{node_id}` and opens a drawer with its course-model description, constrained importance/difficulty labels, source material title, source reference, and bounded excerpt controls.
+No Student Model, mastery, diagnosis, recommendation, adaptive practice, tutor, or course-level RAG was added.
 
-Clicking a graph edge opens a relation drawer that resolves both stored endpoints and states the direction in plain Chinese. It displays actual active relationship evidence when available, distinguishing material evidence, model inference, and structural evidence. The client does not invent citations; when no displayable evidence exists, it says so.
+## 7. Verification results
 
-## Build Orchestration
+| Check | Result |
+|---|---|
+| Backend pytest | PASS — 146/146 |
+| Backend Ruff lint | PASS |
+| Backend Ruff format | PASS — 105 files |
+| Frontend Vitest | PASS — 62/62 |
+| Frontend typecheck | PASS |
+| Frontend ESLint | PASS |
+| Frontend Prettier | PASS |
+| Frontend production build | PASS |
+| Fresh migration | PASS |
+| M3-D → M3-E migration | PASS |
+| Desktop browser | PASS |
+| 375px browser | PASS — no horizontal document overflow |
 
-M3-E adds `POST /api/courses/{course_id}/knowledge-model/build` with a typed response containing:
+The production build retains an existing non-blocking warning for the lazy G6 vendor chunk (about 1.42 MB before gzip). The graph is loaded only when needed.
 
-```text
-course_id
-material_count
-node_count
-contains_edge_count
-prerequisite_edge_count
-reused
-```
+## 8. Browser verification
 
-`CourseKnowledgeBuildService` is deliberately an orchestration boundary. It validates bootstrap-owner course access and requires at least one same-course material whose parse status and persisted text content are usable. It then calls the existing M3-B extraction, M3-C canonicalization, and M3-D relationship services in order with `regenerate=False`.
+Executed against the built SPA and isolated SQLite databases:
 
-It introduces no prompt, provider call format, extraction rule, deduplication policy, hierarchy inference, or prerequisite inference. Existing stage idempotency remains authoritative. If a newly published canonical result is followed by a relationship-stage failure, the service restores the prior current canonical run and managed-node activation state.
+- Existing course: overview showed real counts; search narrowed to 特征值; clearing restored six deterministic rows; detail showed saved description, prerequisite, source, and relationship evidence; source link opened the material with an explicit 全文 fallback note.
+- Structure: hierarchy was default with 13 real nodes; graph exposed relation legend, filters, four viewport controls, and a real graph-node click navigated to the unified detail route.
+- Initial build: course creation, material upload, 202 job start, durable polling, and successful publication were observed.
+- Update: a second parsed material changed status to 有新资料待更新; the update retained the 13-node/15-edge old model while running and completed at 24 nodes/31 edges.
+- M2 regression: generated a summary, generated five study cards, and completed a grounded single-material question through real APIs in explicit mock mode.
+- Responsive: at 375×812 the header, tabs, status, stats, cards, and knowledge content remained readable with document width below viewport width.
 
-Build failures are mapped through the established API error contract: not-ready is `409`, invalid output is `422`, and stage failure is `502`. The frontend uses an endpoint-specific 180-second timeout and preserves an already displayed knowledge model if an update fails.
+## 9. Real Provider verification
 
-M3-E requires no new database migration; it uses the current M3-D schema and Alembic head.
+PASS. The environment reported configured provider credentials without exposing them. An isolated two-material course completed the real OpenAI-compatible/DeepSeek workflow:
 
-## Tests
+- first build: 13 canonical nodes and 15 relations;
+- update build: 24 canonical nodes, 8 CONTAINS, and 23 PREREQUISITE relations;
+- final durable state: ready, needs_update=false.
 
-Focused backend coverage is in `backend/tests/test_m3e_course_knowledge_build.py` (4 tests). It verifies ordered reuse of the existing stages, parsed-material readiness, course ownership hiding, typed build payloads, and recovery of the previously active canonical model after a relationship failure.
+No silent fallback to mock occurred. Provider operations were logged by operation/model/latency only; no key was printed.
 
-Focused frontend coverage is split across two files (14 tests):
+## 10. Limitations and risks
 
-- `knowledge-graph-adapter.spec.ts` covers multiple roots without a synthetic node, disconnected nodes, bounded deterministic component layout, local relation filtering, malformed-edge exclusion, and a 50-node/80-edge fixture;
-- `knowledge-structure-panel.spec.ts` covers empty and recoverable error states, build/reload, retained M2 `EXTRACTED` compatibility, post-build refresh-failure preservation, source provenance rendering, and explicit relation-direction drawers.
+- Exact PDF page navigation is only available if a future material viewer exposes such a contract; current links open the real material and display the stored reference.
+- G6 remains a relatively large lazy chunk. It does not affect non-structure route loading, but further graph-specific code splitting can be considered later.
+- Background execution is process-local but state/lease/checkpoint data is durable. A restart is recovered from persisted state; this competition-grade design intentionally does not introduce Celery/Redis.
+- The deterministic mock build is intentionally sparse; it verifies workflow mechanics, not model quality.
 
-The observed focused M3-E backend result is `4/4`, the M3-A through M3-E backend subset is `60/60`, the full backend regression is `139/139`, and the full frontend Vitest suite is `31/31`.
+## 11. Final status
 
-## Frontend Toolchain Resolution
+COMPLETE
 
-The workspace was verified with an isolated Linux Node.js `22.22.2` and npm `10.9.7` runtime, satisfying the frontend package engine range (`node >=22.12.0 <25`, `npm >=10`). No application dependency was replaced to work around the local toolchain; the package manifest and lockfile remain the project source of truth.
-
-The observed frontend gates are:
-
-- `npm run typecheck`: pass;
-- `npm run lint`: pass;
-- `npm run test`: `31/31` pass;
-- `npm run build`: pass, with the documented lazy G6 vendor-size advisory.
-
-## Browser Verification
-
-Real-browser verification was performed against the built application using a self-authored, parsed course fixture. It exercised the Course Detail tab, graph loading, local relation filtering, graph pan, zoom, fit, reset, a node provenance drawer, and an edge relationship/evidence drawer.
-
-The final graph was visually checked at `1440px`, `1280px`, and `1024px` widths. Resize handling refits the canvas so the course-content layout remains legible without a clipped graph at these acceptance widths.
-
-## Real Provider E2E
-
-The course fixture contained two self-authored TXT materials. Through the real course-level build flow, the configured OpenAI-compatible provider completed the existing M3-B through M3-D stages and returned a persisted model observed in the browser with 12 nodes, 3 `CONTAINS` edges, and 13 `PREREQUISITE` edges.
-
-The browser check opened a real node drawer with stored source provenance and a real prerequisite-edge drawer with its stored explanation/evidence. No credential, provider endpoint, or secret value was logged in this report.
-
-## Backend Regression
-
-The focused M3-E backend tests passed `4/4`; the combined M3-A through M3-E backend subset passed `60/60`; the final full backend suite passed `139/139` in 102.18 seconds. Fresh SQLite and M2-to-current-head Alembic upgrades also passed.
-
-## Frontend Regression
-
-The frontend typecheck, lint, full Vitest suite (`31/31`), and production build passed after the M3-E changes. The existing Course Detail material workflow remains the default first tab, and the G6 module is not loaded unless the knowledge-structure tab is opened.
-
-## Known Limitations
-
-- No graph editing, manual positioning, coordinate persistence, or graph export is implemented.
-- No new LLM extraction, canonicalization, hierarchy, or prerequisite algorithm was introduced by M3-E.
-- No mobile-specific alternate graph representation or complete keyboard graph traversal is claimed.
-- No Student Model, mastery, assessment, recommendation, learning path, tutor, agent, embedding, vector database, or graph database is implemented.
-- The graph remains a course-model inspection surface, not a learner-progress surface.
-
-## M4 Entry Conditions
-
-M4 may compose a separate student-specific model with stable M3 course concepts only after preserving M3 course isolation, node identity, relationship semantics, source/evidence provenance, and current-run visibility.
-
-M4 must not add mastery, confidence, progress, learner state, recommendation, or UI-coordinate fields to `KnowledgeNode`, `KnowledgeEdge`, the M3 graph adapter, or the M3 read/build contracts. Any learner-state visualization must remain distinguishable from this canonical course knowledge structure.
+All P0/P1 workspace capabilities, migrations, automated checks, browser flows, and a controlled real-provider build/update were completed. Future Student Model and personalized learning work remains out of scope.

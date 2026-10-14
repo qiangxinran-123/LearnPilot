@@ -39,6 +39,6 @@ Decision counts:
 | KEEP | 1 | Existing operational asset can be retained directly. |
 | REFACTOR | 8 | Existing behavior has product value but needs new structure, data model, security, or implementation. |
 | DEPRECATE | 1 | Demo-only or invalid endpoint does not belong in V1. |
-| NEW | 16 | Required LearnPilot capability absent from CampusAI. |
+| NEW | 16 | Required LearnPilot capability absent from LearnPilot. |
 
-Existing CampusAI feature count is 10: 1 KEEP, 8 REFACTOR, and 1 DEPRECATE. NEW rows are V1 gaps; they are not claimed as existing CampusAI implementation.
+Existing LearnPilot feature count is 10: 1 KEEP, 8 REFACTOR, and 1 DEPRECATE. NEW rows are V1 gaps; they are not claimed as existing LearnPilot implementation.

@@ -11,16 +11,28 @@ const DialogStub = defineComponent({
 const InputStub = defineComponent({
   props: ['modelValue'],
   emits: ['update:modelValue'],
-  template: '<input :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+  template:
+    '<input :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
 });
 const ButtonStub = defineComponent({
   props: ['disabled'],
-  template: '<button :disabled="disabled" type="button" @click="$emit(\'click\')"><slot /></button>',
+  template:
+    '<button :disabled="disabled" type="button" @click="$emit(\'click\')"><slot /></button>',
 });
 
-function mountDialog() {
+function mountDialog(
+  course?: {
+    id: number;
+    name: string;
+    description: string;
+    category?: string | null;
+    learning_goal?: string | null;
+    target_date?: string | null;
+  },
+  submitting = false,
+) {
   return mount(CourseFormDialog, {
-    props: { modelValue: true },
+    props: { modelValue: true, course, submitting },
     global: {
       stubs: {
         'el-dialog': DialogStub,
@@ -42,27 +54,79 @@ describe('CourseFormDialog', () => {
     expect(wrapper.emitted('submit')).toBeUndefined();
   });
 
-  it('emits a trimmed, typed course payload', async () => {
+  it('creates a course with only a trimmed name', async () => {
     const wrapper = mountDialog();
     const inputs = wrapper.findAll('input');
 
     await inputs[0]!.setValue('  计算机系统基础  ');
-    await inputs[1]!.setValue('计算机科学');
-    await inputs[2]!.setValue('缓存与虚拟内存。');
-    await inputs[3]!.setValue('理解系统层次结构。');
-    await inputs[4]!.setValue('2026-10-01');
+    await wrapper.get('form').trigger('submit');
+
+    expect(wrapper.text()).not.toContain('课程简介');
+    expect(wrapper.text()).not.toContain('课程备注');
+    expect(wrapper.emitted('submit')).toEqual([
+      [
+        {
+          name: '计算机系统基础',
+        },
+      ],
+    ]);
+  });
+
+  it('edits an optional note without clearing legacy course fields', async () => {
+    const wrapper = mountDialog({
+      id: 7,
+      name: '线性代数',
+      description: '原有备注',
+      category: '数学',
+      learning_goal: '掌握线性变换',
+      target_date: '2026-10-01',
+    });
+    const inputs = wrapper.findAll('input');
+
+    expect(wrapper.text()).toContain('课程备注（选填）');
+    await inputs[0]!.setValue('  高等代数  ');
+    await inputs[1]!.setValue('  更新后的备注  ');
     await wrapper.get('form').trigger('submit');
 
     expect(wrapper.emitted('submit')).toEqual([
       [
         {
-          name: '计算机系统基础',
-          category: '计算机科学',
-          description: '缓存与虚拟内存。',
-          learning_goal: '理解系统层次结构。',
+          name: '高等代数',
+          description: '更新后的备注',
+          category: '数学',
+          learning_goal: '掌握线性变换',
           target_date: '2026-10-01',
         },
       ],
     ]);
+  });
+
+  it('preserves an explicit empty note so the user can clear it', async () => {
+    const wrapper = mountDialog({ id: 7, name: '线性代数', description: '原有备注' });
+    const inputs = wrapper.findAll('input');
+
+    await inputs[1]!.setValue('');
+    await wrapper.get('form').trigger('submit');
+
+    expect(wrapper.emitted('submit')).toEqual([
+      [
+        {
+          name: '线性代数',
+          description: '',
+          category: null,
+          learning_goal: null,
+          target_date: null,
+        },
+      ],
+    ]);
+  });
+
+  it('does not emit a second submission while the parent request is pending', async () => {
+    const wrapper = mountDialog(undefined, true);
+    await wrapper.find('input').setValue('离散数学');
+
+    await wrapper.get('form').trigger('submit');
+
+    expect(wrapper.emitted('submit')).toBeUndefined();
   });
 });

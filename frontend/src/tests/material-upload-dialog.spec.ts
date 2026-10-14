@@ -19,7 +19,8 @@ const DialogStub = defineComponent({
 const ButtonStub = defineComponent({
   props: ['disabled'],
   emits: ['click'],
-  template: '<button :disabled="disabled" type="button" @click="$emit(\'click\')"><slot /></button>',
+  template:
+    '<button :disabled="disabled" type="button" @click="$emit(\'click\')"><slot /></button>',
 });
 const IconStub = defineComponent({ template: '<span><slot /></span>' });
 
@@ -79,8 +80,13 @@ describe('MaterialUploadDialog', () => {
     mockedUploadMaterial.mockResolvedValue(parsedMaterial);
     const wrapper = mountUploadDialog();
 
-    await selectFile(wrapper, new File(['缓存是高速存储器。'], 'lecture.txt', { type: 'text/plain' }));
-    const uploadButton = wrapper.findAll('button').find((button) => button.text().includes('上传并解析'));
+    await selectFile(
+      wrapper,
+      new File(['缓存是高速存储器。'], 'lecture.txt', { type: 'text/plain' }),
+    );
+    const uploadButton = wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('上传并解析'));
     await uploadButton?.trigger('click');
     await flushPromises();
 

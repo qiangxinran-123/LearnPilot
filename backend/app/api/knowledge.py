@@ -1,18 +1,29 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from dataclasses import asdict
+from typing import Annotated
+
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 
 from backend.app.core.errors import ApiError
 from backend.app.schemas.knowledge import (
+    KnowledgeBuildJobResponse,
+    KnowledgeBuildStatusResponse,
     KnowledgeCanonicalizationRequest,
     KnowledgeCanonicalizationResponse,
     KnowledgeExtractionRequest,
     KnowledgeExtractionResponse,
     KnowledgeModelBuildResponse,
     KnowledgeModelResponse,
+    KnowledgeNodeBrowseResponse,
     KnowledgeNodeDetailResponse,
     KnowledgeRelationshipRequest,
     KnowledgeRelationshipsResponse,
+)
+from backend.app.services.course_knowledge_build_job_service import (
+    CourseKnowledgeBuildJobService,
+    get_course_knowledge_build_job_service,
+    run_course_knowledge_build_job,
 )
 from backend.app.services.course_knowledge_build_service import (
     CourseKnowledgeBuildError,
@@ -145,12 +156,28 @@ def knowledge_model_build_payload(result: CourseKnowledgeBuildResult) -> dict[st
 def get_course_knowledge_model(
     course_id: int,
     service: KnowledgeModelService = Depends(get_knowledge_model_service),
+    canonical_only: bool = False,
 ) -> dict[str, object]:
     try:
-        nodes, edges = service.get_knowledge_model(course_id)
+        nodes, edges = service.get_knowledge_model(course_id, canonical_only=canonical_only)
     except ResourceNotFoundError as error:
         raise course_not_found() from error
     return {"course_id": course_id, "nodes": nodes, "edges": edges}
+
+
+@router.get("/{course_id}/knowledge-nodes", response_model=KnowledgeNodeBrowseResponse)
+def browse_course_knowledge_nodes(
+    course_id: int,
+    q: Annotated[str, Query(max_length=100)] = "",
+    offset: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=100)] = 8,
+    service: KnowledgeModelService = Depends(get_knowledge_model_service),
+) -> dict[str, object]:
+    try:
+        total, nodes = service.browse_canonical_nodes(course_id, query=q, offset=offset, limit=limit)
+    except ResourceNotFoundError as error:
+        raise course_not_found() from error
+    return {"course_id": course_id, "total": total, "offset": offset, "limit": limit, "nodes": nodes}
 
 
 @router.post(
@@ -168,6 +195,41 @@ def build_course_knowledge_model(
     except CourseKnowledgeBuildError as error:
         raise knowledge_model_build_error(error) from error
     return knowledge_model_build_payload(result)
+
+
+@router.post(
+    "/{course_id}/knowledge-model/build-jobs",
+    response_model=KnowledgeBuildJobResponse,
+    status_code=202,
+)
+def start_course_knowledge_build_job(
+    course_id: int,
+    background_tasks: BackgroundTasks,
+    service: CourseKnowledgeBuildJobService = Depends(get_course_knowledge_build_job_service),
+) -> dict[str, object]:
+    try:
+        job = service.start(course_id)
+    except ResourceNotFoundError as error:
+        raise course_not_found() from error
+    except CourseKnowledgeBuildError as error:
+        raise knowledge_model_build_error(error) from error
+    if job.should_schedule:
+        background_tasks.add_task(run_course_knowledge_build_job, course_id, job.job_id, service.settings)
+    return {"job_id": job.job_id, "status": job.status, "stage": job.stage, "reused": job.reused}
+
+
+@router.get(
+    "/{course_id}/knowledge-model/build-status",
+    response_model=KnowledgeBuildStatusResponse,
+)
+def get_course_knowledge_build_status(
+    course_id: int,
+    service: CourseKnowledgeBuildJobService = Depends(get_course_knowledge_build_job_service),
+) -> dict[str, object]:
+    try:
+        return asdict(service.get_status(course_id))
+    except ResourceNotFoundError as error:
+        raise course_not_found() from error
 
 
 @router.get(

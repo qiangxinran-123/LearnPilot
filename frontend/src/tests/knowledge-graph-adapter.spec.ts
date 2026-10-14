@@ -110,7 +110,10 @@ describe('adaptKnowledgeModelToGraph', () => {
   it('packs disconnected roots into deterministic bounded rows for readable fit-to-view', () => {
     const adapted = adaptKnowledgeModelToGraph(model({ edges: [] }));
     const positions = new Map(
-      adapted.data.nodes.map((node) => [node.id, { x: Number(node.style.x), y: Number(node.style.y) }]),
+      adapted.data.nodes.map((node) => [
+        node.id,
+        { x: Number(node.style.x), y: Number(node.style.y) },
+      ]),
     );
 
     expect(positions.get('knowledge-node-1')?.y).toBe(positions.get('knowledge-node-3')?.y);
@@ -200,7 +203,11 @@ describe('adaptKnowledgeModelToGraph', () => {
       updated_at: '2026-01-01T00:00:00Z',
     }));
 
-    const adapted = adaptKnowledgeModelToGraph({ course_id: 7, nodes, edges: [...contains, ...prerequisites] });
+    const adapted = adaptKnowledgeModelToGraph({
+      course_id: 7,
+      nodes,
+      edges: [...contains, ...prerequisites],
+    });
 
     expect(adapted.data.nodes).toHaveLength(50);
     expect(adapted.data.edges).toHaveLength(80);

@@ -1,7 +1,7 @@
 import { createMemoryHistory, createRouter } from 'vue-router';
 import { describe, expect, it } from 'vitest';
 
-import { routes } from '@/router';
+import { isKnowledgeMapFocusChange, routes, scrollBehavior } from '@/router';
 
 const mainPaths = ['/dashboard', '/courses', '/diagnose', '/learn', '/progress'];
 
@@ -23,5 +23,22 @@ describe('product router', () => {
     await router.push('/route-that-does-not-exist');
 
     expect(router.currentRoute.value.name).toBe('not-found');
+  });
+
+  it('preserves page scroll only for node focus changes inside the same course knowledge map', () => {
+    const router = createRouter({ history: createMemoryHistory(), routes });
+    const from = router.resolve('/courses/7?tab=knowledge-structure&nodeId=1');
+    const nextNode = router.resolve('/courses/7?tab=knowledge-structure&nodeId=2');
+    const otherTab = router.resolve('/courses/7?tab=materials&nodeId=2');
+    const otherCourse = router.resolve('/courses/8?tab=knowledge-structure&nodeId=2');
+
+    expect(isKnowledgeMapFocusChange(nextNode, from)).toBe(true);
+    expect(scrollBehavior(nextNode, from, null)).toEqual({
+      left: window.scrollX,
+      top: window.scrollY,
+    });
+    expect(isKnowledgeMapFocusChange(otherTab, from)).toBe(false);
+    expect(scrollBehavior(otherTab, from, null)).toEqual({ top: 0 });
+    expect(isKnowledgeMapFocusChange(otherCourse, from)).toBe(false);
   });
 });

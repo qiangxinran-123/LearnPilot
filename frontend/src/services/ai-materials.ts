@@ -21,6 +21,9 @@ export function generateMaterialCards(materialId: number): Promise<CardGeneratio
   return httpClient.post<CardGenerationResponse>(`/materials/${materialId}/cards`, {});
 }
 
-export function askMaterialQuestion(materialId: number, question: string): Promise<MaterialQAResponse> {
+export function askMaterialQuestion(
+  materialId: number,
+  question: string,
+): Promise<MaterialQAResponse> {
   return httpClient.post<MaterialQAResponse>(`/materials/${materialId}/qa`, { question });
 }

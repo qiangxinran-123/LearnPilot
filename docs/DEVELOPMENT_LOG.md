@@ -1,6 +1,6 @@
-# LearnPilot / CampusAI 分阶段开发日志
+# LearnPilot / LearnPilot 分阶段开发日志
 
-本日志同时记录当前 LearnPilot V1 里程碑和早期 CampusAI V0.1 原型演进。当前运行基线已完成 M3-E 与 M3 最终验收；下方 CampusAI V0.1 阶段表仅用于历史追溯。
+本日志同时记录当前 LearnPilot V1 里程碑和早期 LearnPilot V0.1 原型演进。当前运行基线已完成 M3-E 与 M3 最终验收；下方 LearnPilot V0.1 阶段表仅用于历史追溯。
 
 ## LearnPilot V1 里程碑
 
@@ -18,9 +18,9 @@
 
 M3 完成的是 Course Knowledge Model：资料证据 → 候选 → 规范节点 → 层级/先修关系 → 课程内可视化。它不引入学生掌握度、进度、诊断、推荐或学习路径；Course Model 与未来 Student Model 保持分离。完整边界见 [M3 最终验收](migration/M3_FINAL_ACCEPTANCE.md)。
 
-## CampusAI V0.1 历史原型阶段
+## LearnPilot V0.1 历史原型阶段
 
-CampusAI V0.1 从最小 FastAPI 后端逐步发展为“资料上传、文本处理、搜索和复习辅助”JSON 原型。每个阶段以可运行接口和可验证结果为边界。
+LearnPilot V0.1 从最小 FastAPI 后端逐步发展为“资料上传、文本处理、搜索和复习辅助”JSON 原型。每个阶段以可运行接口和可验证结果为边界。
 
 | 阶段 | 阶段目标 | 完成内容 | 验收方式 | 项目价值 |
 | --- | --- | --- | --- | --- |
@@ -43,10 +43,10 @@ CampusAI V0.1 从最小 FastAPI 后端逐步发展为“资料上传、文本处
 测试使用临时 JSON 数据文件和临时上传目录启动真实 Uvicorn 服务，再通过 HTTP 请求验证公开 API。这种方式既验证接口行为，也验证持久化和服务重启场景，不会污染 `backend/app/data/courses.json`。
 
 ```bash
-wsl -d Ubuntu --cd /home/qxrrr/projects/campus-ai \
+wsl -d Ubuntu --cd /home/qxrrr/projects/learnpilot \
 .venv/bin/python -m unittest backend.tests.test_courses_api
 ```
 
 ## 版本定位
 
-CampusAI V0.1 是后端导向的比赛原型，其摘要和卡片使用本地 mock 规则。当前 LearnPilot V1 已迁移到关系数据库、Vue 前端和可配置的模型 provider，并完成 M3 课程知识模型的抽取、归一化、关系生成与可视化；学生模型、掌握度、诊断、推荐和自适应学习仍属于后续里程碑。
+LearnPilot V0.1 是后端导向的比赛原型，其摘要和卡片使用本地 mock 规则。当前 LearnPilot V1 已迁移到关系数据库、Vue 前端和可配置的模型 provider，并完成 M3 课程知识模型的抽取、归一化、关系生成与可视化；学生模型、掌握度、诊断、推荐和自适应学习仍属于后续里程碑。

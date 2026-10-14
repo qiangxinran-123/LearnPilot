@@ -85,7 +85,11 @@ function toggleExcerpt(sourceId: number): void {
           <span>{{ detail.sources.length }} 条</span>
         </div>
 
-        <el-empty v-if="detail.sources.length === 0" description="暂未记录来源片段" :image-size="76" />
+        <el-empty
+          v-if="detail.sources.length === 0"
+          description="暂未记录来源片段"
+          :image-size="76"
+        />
         <ul v-else class="knowledge-source-list">
           <li v-for="source in detail.sources" :key="source.id">
             <p class="knowledge-source-title">{{ materialTitle(source.material_id) }}</p>

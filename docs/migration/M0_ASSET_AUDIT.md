@@ -2,11 +2,11 @@
 
 Audit date: 2026-09-21
 
-Scope: CampusAI baseline only. No business code, dependency version, database schema, Git history, tag, branch, commit, push, reset, clean, checkout, restore, or stash was changed.
+Scope: LearnPilot baseline only. No business code, dependency version, database schema, Git history, tag, branch, commit, push, reset, clean, checkout, restore, or stash was changed.
 
 ## 1. Executive Summary
 
-M0 is complete. CampusAI is a runnable FastAPI prototype, not a production AI learning system. It serves one native browser workspace backed by JSON and implements seeded course/material reads, TXT/MD upload/extraction, keyword search, deterministic mock summaries, and deterministic mock cards.
+M0 is complete. LearnPilot is a runnable FastAPI prototype, not a production AI learning system. It serves one native browser workspace backed by JSON and implements seeded course/material reads, TXT/MD upload/extraction, keyword search, deterministic mock summaries, and deterministic mock cards.
 
 Backend dependency installation, application import, server startup, static frontend delivery, live GET APIs, and all 23 existing HTTP integration tests passed in an isolated Python 3.14 environment. There is no frontend package/build/test system, database, ORM, migrations, authentication, real LLM, AI Chat, PDF/DOCX/PPTX parser, or LearnPilot Diagnose/Mastery/Progress domain.
 
@@ -22,7 +22,7 @@ Initial commands executed:
 
 | Item | Evidence |
 |---|---|
-| Repository | /home/qxrrr/projects/campus-ai |
+| Repository | /home/qxrrr/projects/learnpilot |
 | Branch | main |
 | Upstream state | ahead of origin/main by 1 commit |
 | Initial state | WORKTREE_DIRTY |
@@ -41,14 +41,14 @@ Recent history:
     3fa9953 add minimal frontend page
     205c005 polish Chinese-first project documentation
     a572caa polish Chinese-first project documentation
-    6977c2c prepare CampusAI v0.1 release
+    6977c2c prepare LearnPilot v0.1 release
     d45373e add project documentation and demo materials
     5f62e8a add study card generation API
     ff9f36d add material search API
 
 ## 3. Current Architecture
 
-    campus-ai/
+    learnpilot/
     ├── frontend/                   Native HTML/CSS/JavaScript workspace
     ├── backend/
     │   ├── main.py                 FastAPI and static-file mount
@@ -104,7 +104,7 @@ The page provides course select, material read, TXT/MD upload, summary/card acti
 | Check | Result | Evidence |
 |---|---|---|
 | Dependency Install | PASS | Existing requirements installed in isolated /tmp environment. |
-| Application Import | PASS | backend.main:app imported as CampusAI API 0.1.0; 7 top-level routes. |
+| Application Import | PASS | backend.main:app imported as LearnPilot API 0.1.0; 7 top-level routes. |
 | Server Startup | PASS | Uvicorn served static assets, health, API, docs and OpenAPI. |
 | Tests | PASS WITH WARNING | 23 tests passed in 11.612 seconds; ResourceWarning for unclosed HTTPError paths. |
 
@@ -178,7 +178,7 @@ Upload has extension allowlisting and basename sanitization, which mitigate basi
 | Feature | Decision | Current state | Reason, risk, recommendation |
 |---|---|---|---|
 | Health/API metadata | KEEP | Runtime verified | Valid operational asset; retain under V1 API convention. |
-| Native workspace shell | REFACTOR | Static verified; browser E2E not verified | Useful workflow but one CampusAI page cannot express five V1 modules. |
+| Native workspace shell | REFACTOR | Static verified; browser E2E not verified | Useful workflow but one LearnPilot page cannot express five V1 modules. |
 | Seeded course catalog | REFACTOR | Verified | Correct Course start but read-only demo JSON has no CRUD/ownership/lifecycle. |
 | Materials | REFACTOR | Verified | JSON cannot support relations, revision, ownership, scale or concurrency. |
 | File upload/storage | REFACTOR | Partial verified | Valuable Course asset but insecure/unbounded and parser coverage is inadequate. |
@@ -227,12 +227,12 @@ Integrated means source paths align and HTTP behavior was tested. It is not brow
 | Reproducible resolution | FAIL | Lower bounds only; no lockfile. |
 | Docker/deployment | NOT AVAILABLE | No related files. |
 
-## 15. CampusAI → LearnPilot Mapping
+## 15. LearnPilot → LearnPilot Mapping
 
-| CampusAI Feature | Current Implementation | LearnPilot Destination | Decision |
+| LearnPilot Feature | Current Implementation | LearnPilot Destination | Decision |
 |---|---|---|---|
 | Health/API metadata | FastAPI lightweight endpoints | Platform/operations | KEEP |
-| Native study workspace | One static CampusAI page | Dashboard, Course, Learn | REFACTOR |
+| Native study workspace | One static LearnPilot page | Dashboard, Course, Learn | REFACTOR |
 | Course list | Read-only seed JSON | Course | REFACTOR |
 | Materials/upload | JSON metadata/local filesystem | Course / Materials | REFACTOR |
 | TXT/MD extraction | UTF-8 preview extractor | Course / Materials processing | REFACTOR |

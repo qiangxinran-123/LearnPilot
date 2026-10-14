@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
+import { useRouter } from 'vue-router';
 import { Collection, Plus } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
 
@@ -15,6 +16,7 @@ import { useCourseStore } from '@/stores/courses';
 import type { CourseInput } from '@/types/course';
 
 const courseStore = useCourseStore();
+const router = useRouter();
 const isCreateDialogOpen = ref(false);
 const isSubmitting = ref(false);
 
@@ -28,6 +30,7 @@ async function createNewCourse(payload: CourseInput): Promise<void> {
     const course = await createCourse(payload);
     await courseStore.loadCourses(true);
     isCreateDialogOpen.value = false;
+    await router.push({ name: 'course-detail', params: { courseId: course.id } });
     ElMessage.success(`已创建课程「${course.name}」`);
   } catch (error: unknown) {
     ElMessage.error(normalizeApiError(error).message);
@@ -69,6 +72,10 @@ async function createNewCourse(payload: CourseInput): Promise<void> {
       <CourseCard v-for="course in courseStore.courses" :key="course.id" :course="course" />
     </section>
 
-    <CourseFormDialog v-model="isCreateDialogOpen" :submitting="isSubmitting" @submit="createNewCourse" />
+    <CourseFormDialog
+      v-model="isCreateDialogOpen"
+      :submitting="isSubmitting"
+      @submit="createNewCourse"
+    />
   </section>
 </template>

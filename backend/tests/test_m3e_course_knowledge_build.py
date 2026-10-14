@@ -16,7 +16,15 @@ from sqlalchemy.orm import Session, sessionmaker
 from backend.app.api.knowledge import build_course_knowledge_model
 from backend.app.core.errors import ApiError
 from backend.app.core.settings import Settings
-from backend.app.db.models import Course, KnowledgeCanonicalizationRun, KnowledgeNode, Material, MaterialContent, User
+from backend.app.db.models import (
+    Course,
+    KnowledgeCanonicalizationRun,
+    KnowledgeNode,
+    KnowledgeSource,
+    Material,
+    MaterialContent,
+    User,
+)
 from backend.app.models import (
     KnowledgeCanonicalizationStatus,
     KnowledgeDifficulty,
@@ -280,7 +288,7 @@ def test_relationship_failure_restores_prior_active_canonical_model(database) ->
                 course_id=seed.course_id,
                 name="Previous concept",
                 normalized_name="previous concept",
-                description="",
+                description="Previously verified explanation.",
                 importance=KnowledgeImportance.MEDIUM,
                 difficulty=KnowledgeDifficulty.INTERMEDIATE,
                 is_active=True,
@@ -288,6 +296,14 @@ def test_relationship_failure_restores_prior_active_canonical_model(database) ->
             )
             session.add_all([previous_run, previous_node])
             session.flush()
+            session.add(
+                KnowledgeSource(
+                    knowledge_node_id=previous_node.id,
+                    material_id=seed.ready_material_id,
+                    source_reference="TXT segment 1",
+                    excerpt="Previously verified source.",
+                )
+            )
             previous_run_id = previous_run.id
             previous_node_id = previous_node.id
 
@@ -316,6 +332,16 @@ def test_relationship_failure_restores_prior_active_canonical_model(database) ->
                     previous = session.get(KnowledgeNode, previous_node_id)
                     assert previous is not None
                     previous.is_active = False
+                    previous.description = "Unpublished replacement."
+                    session.query(KnowledgeSource).filter_by(knowledge_node_id=previous_node_id).delete()
+                    session.add(
+                        KnowledgeSource(
+                            knowledge_node_id=previous_node_id,
+                            material_id=seed.ready_material_id,
+                            source_reference="TXT segment 1",
+                            excerpt="Unpublished replacement source.",
+                        )
+                    )
                     published_node = KnowledgeNode(
                         course_id=seed.course_id,
                         name="New concept",
@@ -357,4 +383,9 @@ def test_relationship_failure_restores_prior_active_canonical_model(database) ->
             new_node = session.query(KnowledgeNode).filter_by(normalized_name="new concept").one()
             assert restored_run is not None and restored_run.is_current is True
             assert restored_node is not None and restored_node.is_active is True
+            assert restored_node.description == "Previously verified explanation."
+            restored_sources = session.query(KnowledgeSource).filter_by(knowledge_node_id=previous_node_id).all()
+            assert [(source.source_reference, source.excerpt) for source in restored_sources] == [
+                ("TXT segment 1", "Previously verified source.")
+            ]
             assert new_node.is_active is False

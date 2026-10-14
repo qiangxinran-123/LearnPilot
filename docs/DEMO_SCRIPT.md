@@ -1,14 +1,14 @@
-# CampusAI V0.3 比赛演示脚本
+# LearnPilot V0.3 比赛演示脚本
 
 建议时长：4-6 分钟。
 
-本次演示围绕一个学生用户故事展开：学生把一份课程资料上传到 CampusAI，生成摘要和复习卡片，再搜索知识点完成复习。当前摘要和卡片由本地 mock AI 生成，不代表已接入真实大模型。
+本次演示围绕一个学生用户故事展开：学生把一份课程资料上传到 LearnPilot，生成摘要和复习卡片，再搜索知识点完成复习。当前摘要和卡片由本地 mock AI 生成，不代表已接入真实大模型。
 
 ## 1. 项目简介
 
 讲解词：
 
-> CampusAI 是一个帮助大学生把课程资料快速整理成摘要、复习卡片和可搜索知识库的 AI 学习助手。当前版本不继续堆叠功能，而是把体验收束为“选择课程、上传资料、生成学习包、搜索复习”这一条学习闭环。
+> LearnPilot 是一个帮助大学生把课程资料快速整理成摘要、复习卡片和可搜索知识库的 AI 学习助手。当前版本不继续堆叠功能，而是把体验收束为“选择课程、上传资料、生成学习包、搜索复习”这一条学习闭环。
 
 打开首页 `http://127.0.0.1:8000`。说明页面由 FastAPI 托管的原生 HTML、CSS、JavaScript 构成，不需要前端构建工具。
 
@@ -81,10 +81,10 @@ A suitable learning rate helps the model converge without overshooting.
 
 讲解词：
 
-> CampusAI 已实现从资料上传、文本提取、持久化，到摘要、复习卡片和知识点搜索的完整可演示闭环。下一步会接入真实 LLM、RAG 和向量数据库，但当前版本会明确标注为 mock AI 原型。
+> LearnPilot 已实现从资料上传、文本提取、持久化，到摘要、复习卡片和知识点搜索的完整可演示闭环。下一步会接入真实 LLM、RAG 和向量数据库，但当前版本会明确标注为 mock AI 原型。
 
 结束时可展示测试命令：
 
 ```bash
-wsl -d Ubuntu --cd /home/qxrrr/projects/campus-ai .venv/bin/python -m unittest backend.tests.test_courses_api
+wsl -d Ubuntu --cd /home/qxrrr/projects/learnpilot .venv/bin/python -m unittest backend.tests.test_courses_api
 ```

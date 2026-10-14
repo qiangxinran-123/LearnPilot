@@ -33,7 +33,9 @@ const emit = defineEmits<{
 
 const container = ref<HTMLElement>();
 const graph = ref<G6GraphLike>();
-const graphData = ref<KnowledgeGraphData>(adaptKnowledgeModelToGraph(props.model, props.visibility));
+const graphData = ref<KnowledgeGraphData>(
+  adaptKnowledgeModelToGraph(props.model, props.visibility),
+);
 const graphError = ref(false);
 let resizeObserver: ResizeObserver | undefined;
 let disposed = false;
@@ -77,23 +79,22 @@ async function createGraph(): Promise<void> {
       return;
     }
 
-    const instance = Reflect.construct(Graph as unknown as CallableFunction, [{
-      container: container.value,
-      data: graphData.value.data,
-      animation: false,
-      autoFit: 'view',
-      padding: [48, 56],
-      behaviors: [
-        { type: 'drag-canvas', key: 'drag-canvas' },
-        { type: 'zoom-canvas', key: 'zoom-canvas', sensitivity: 1.15 },
-      ],
-      node: {
-        type: 'rect',
+    const instance = Reflect.construct(Graph as unknown as CallableFunction, [
+      {
+        container: container.value,
+        data: graphData.value.data,
+        animation: false,
+        autoFit: 'view',
+        padding: [48, 56],
+        behaviors: [{ type: 'drag-canvas', key: 'drag-canvas' }],
+        node: {
+          type: 'rect',
+        },
+        edge: {
+          type: 'line',
+        },
       },
-      edge: {
-        type: 'line',
-      },
-    }]) as G6GraphLike;
+    ]) as G6GraphLike;
 
     instance.on('node:click', (event: unknown) => {
       const nodeId = graphData.value.nodeIdByGraphId.get(getGraphElementId(event) ?? '');
@@ -192,7 +193,12 @@ onBeforeUnmount(() => {
       </el-tooltip>
     </div>
 
-    <div ref="container" class="knowledge-graph-canvas" role="application" :aria-label="accessibleSummary" />
+    <div
+      ref="container"
+      class="knowledge-graph-canvas"
+      role="application"
+      :aria-label="accessibleSummary"
+    />
     <div v-if="graphError" class="knowledge-graph-fallback" role="status">
       图谱渲染暂不可用，请重新加载页面。
     </div>
@@ -208,8 +214,7 @@ onBeforeUnmount(() => {
   border-radius: 18px;
   background:
     linear-gradient(rgba(96, 117, 166, 0.055) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(96, 117, 166, 0.055) 1px, transparent 1px),
-    #fafdff;
+    linear-gradient(90deg, rgba(96, 117, 166, 0.055) 1px, transparent 1px), #fafdff;
   background-size: 24px 24px;
 }
 

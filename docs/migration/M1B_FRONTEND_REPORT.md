@@ -6,7 +6,7 @@
 
 ## Actual Changes
 
-- Replaced the active native CampusAI frontend with a Vue 3 + TypeScript + Vite application.
+- Replaced the active native LearnPilot frontend with a Vue 3 + TypeScript + Vite application.
 - Added Vue Router, Pinia, Element Plus, Axios, ESLint, Prettier, Vitest, and Vue Test Utils with an npm lockfile.
 - Added the learner-journey shell: 首页, 课程, 诊断, 学习, 进展, plus a Not Found route.
 - Added shared layout, sidebar, header, page-header, loading, error, empty-state, and course-card components.
@@ -18,7 +18,7 @@
 
 ## Legacy Frontend Migration
 
-The original `frontend/index.html`, `frontend/app.js`, and `frontend/styles.css` were native CampusAI UI files with no user modifications at the start of M1-B. They were moved into `frontend/legacy/` after the Vue build was established. FastAPI now serves `frontend/dist/` only when a production build exists; development uses Vite.
+The original `frontend/index.html`, `frontend/app.js`, and `frontend/styles.css` were native LearnPilot UI files with no user modifications at the start of M1-B. They were moved into `frontend/legacy/` after the Vue build was established. FastAPI now serves `frontend/dist/` only when a production build exists; development uses Vite.
 
 ## Frontend Skill Usage
 

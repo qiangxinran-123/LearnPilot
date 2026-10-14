@@ -1,3 +1,4 @@
+from backend.app.repositories.course_knowledge_build_state_repository import CourseKnowledgeBuildStateRepository
 from backend.app.repositories.course_repository import CourseRepository
 from backend.app.repositories.knowledge_candidate_repository import KnowledgeCandidateRepository
 from backend.app.repositories.knowledge_candidate_resolution_repository import KnowledgeCandidateResolutionRepository
@@ -17,6 +18,7 @@ from backend.app.repositories.user_repository import UserRepository
 
 __all__ = [
     "CourseRepository",
+    "CourseKnowledgeBuildStateRepository",
     "KnowledgeCandidateRepository",
     "KnowledgeCandidateResolutionRepository",
     "KnowledgeCandidateSourceRepository",

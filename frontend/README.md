@@ -14,21 +14,21 @@ Tested with Node.js `22.22.2` and npm `10.9.7`. Supported Node range: `>=22.12.0
 
 Start a configured FastAPI backend in one terminal. The commands below assume backend dependencies are installed in the repository-root `.venv`. The example `.env.example` sets an explicit local SQLite demo URL. `cp -n` creates the ignored private `.env` only if one does not already exist; preserve an existing configuration before applying Alembic. With no `DATABASE_URL`, startup fails explicitly.
 
-~~~bash
+```bash
 # repository root
 cp -n .env.example .env
 .venv/bin/alembic upgrade head
 .venv/bin/uvicorn backend.main:app --reload
-~~~
+```
 
-If the legacy CampusAI data has not yet been imported, run the explicit, idempotent importer before starting the server:
+If the legacy LearnPilot data has not yet been imported, run the explicit, idempotent importer before starting the server:
 
-~~~bash
+```bash
 .venv/bin/python -m backend.scripts.import_legacy_json \
   --database-url "sqlite+pysqlite:///./learnpilot-demo.sqlite3" \
   --source backend/app/data/courses.json \
   --dry-run
-~~~
+```
 
 Review the dry-run summary before removing `--dry-run` to import. If you configured MySQL or another database, pass the corresponding private URL to `--database-url`; the importer does not infer that argument from `.env`.
 
@@ -80,4 +80,4 @@ A real-provider browser E2E used two self-authored TXT materials and the course-
 
 ## Legacy migration
 
-The former native CampusAI UI is preserved in `legacy/` for reference only. It is not served by the Vue development server or the production static integration.
+The former native LearnPilot UI is preserved in `legacy/` for reference only. It is not served by the Vue development server or the production static integration.

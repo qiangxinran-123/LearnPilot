@@ -1,15 +1,24 @@
 from __future__ import annotations
 
 from fastapi import Depends
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from backend.app.core.settings import Settings, get_settings
-from backend.app.db.models import KnowledgeEdge, KnowledgeNode, KnowledgeSource, Material, User
+from backend.app.db.models import (
+    KnowledgeCandidateResolution,
+    KnowledgeEdge,
+    KnowledgeNode,
+    KnowledgeSource,
+    Material,
+    User,
+)
 from backend.app.db.session import get_db
 from backend.app.models import normalize_knowledge_name
 from backend.app.repositories import (
     CourseRepository,
+    KnowledgeCanonicalizationRunRepository,
     KnowledgeEdgeRepository,
     KnowledgeNodeRepository,
     KnowledgeSourceRepository,
@@ -66,14 +75,69 @@ class KnowledgeModelService:
         self.user_repository = user_repository
         self.settings = settings
 
-    def get_knowledge_model(self, course_id: int) -> tuple[list[KnowledgeNode], list[KnowledgeEdge]]:
+    def get_knowledge_model(
+        self, course_id: int, *, canonical_only: bool = False
+    ) -> tuple[list[KnowledgeNode], list[KnowledgeEdge]]:
         with self.session.begin():
             owner = self._get_or_create_owner()
             self._require_course(course_id, owner.id)
+            nodes = self.node_repository.list_by_course(course_id)
+            edges = self.edge_repository.list_current_by_course(course_id)
+            if not canonical_only:
+                return nodes, edges
+            ids = self._canonical_node_ids(course_id)
             return (
-                self.node_repository.list_by_course(course_id),
-                self.edge_repository.list_current_by_course(course_id),
+                [node for node in nodes if node.id in ids],
+                [edge for edge in edges if edge.source_node_id in ids and edge.target_node_id in ids],
             )
+
+    def browse_canonical_nodes(
+        self, course_id: int, *, query: str, offset: int, limit: int
+    ) -> tuple[int, list[KnowledgeNode]]:
+        with self.session.begin():
+            owner = self._get_or_create_owner()
+            self._require_course(course_id, owner.id)
+            run = KnowledgeCanonicalizationRunRepository(self.session).get_current_for_course(course_id)
+            if run is None:
+                return 0, []
+            statement = (
+                select(KnowledgeNode)
+                .join(
+                    KnowledgeCandidateResolution,
+                    KnowledgeCandidateResolution.knowledge_node_id == KnowledgeNode.id,
+                )
+                .where(
+                    KnowledgeNode.course_id == course_id,
+                    KnowledgeNode.is_active.is_(True),
+                    KnowledgeCandidateResolution.course_id == course_id,
+                    KnowledgeCandidateResolution.canonicalization_run_id == run.id,
+                )
+                .distinct()
+            )
+            normalized_query = normalize_knowledge_name(query)
+            if normalized_query:
+                statement = statement.where(
+                    or_(
+                        KnowledgeNode.name.contains(query.strip(), autoescape=True),
+                        KnowledgeNode.normalized_name.contains(normalized_query, autoescape=True),
+                    )
+                )
+            total = self.session.scalar(select(func.count()).select_from(statement.subquery())) or 0
+            page = statement.order_by(KnowledgeNode.normalized_name, KnowledgeNode.id).offset(offset).limit(limit)
+            return total, list(self.session.scalars(page))
+
+    def _canonical_node_ids(self, course_id: int) -> set[int]:
+        run = KnowledgeCanonicalizationRunRepository(self.session).get_current_for_course(course_id)
+        if run is None:
+            return set()
+        return set(
+            self.session.scalars(
+                select(KnowledgeCandidateResolution.knowledge_node_id).where(
+                    KnowledgeCandidateResolution.course_id == course_id,
+                    KnowledgeCandidateResolution.canonicalization_run_id == run.id,
+                )
+            )
+        )
 
     def get_node_detail(
         self, course_id: int, node_id: int

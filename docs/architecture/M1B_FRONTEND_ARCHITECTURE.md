@@ -2,7 +2,7 @@
 
 ## 1. Scope
 
-M1-B replaces the active CampusAI native frontend with a Vue 3 product shell. It establishes navigation, shared UI states, a typed API boundary, a minimal Pinia store, and five learner-journey routes. It does not introduce course CRUD, material-upload UI, AI, diagnosis, knowledge graph, mastery, recommendation, tutor, or progress analytics.
+M1-B replaces the active LearnPilot native frontend with a Vue 3 product shell. It establishes navigation, shared UI states, a typed API boundary, a minimal Pinia store, and five learner-journey routes. It does not introduce course CRUD, material-upload UI, AI, diagnosis, knowledge graph, mastery, recommendation, tutor, or progress analytics.
 
 ## 2. Frontend Stack
 
@@ -20,7 +20,7 @@ The package manifest pins its dependency graph through `package-lock.json` and d
 
 ```text
 frontend/
-├── legacy/                 # preserved native CampusAI reference, not runtime
+├── legacy/                 # preserved native LearnPilot reference, not runtime
 ├── src/
 │   ├── components/         # navigation, common, feedback components
 │   ├── layouts/            # AppLayout

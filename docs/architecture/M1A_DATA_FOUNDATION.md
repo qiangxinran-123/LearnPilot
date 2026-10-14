@@ -50,7 +50,7 @@ The migration creates users, courses, and materials with foreign keys and indexe
 
 ## Ownership Model
 
-Every Course requires owner_id. Legacy CampusAI records are assigned to an explicit bootstrap user selected by LEGACY_BOOTSTRAP_USER and LEGACY_BOOTSTRAP_USER_DISPLAY_NAME. The importer finds this user by email or creates it, never relies on a magic numeric ID. Authentication APIs are deliberately out of scope; future authentication will resolve the authenticated user to this ownership model.
+Every Course requires owner_id. Legacy LearnPilot records are assigned to an explicit bootstrap user selected by LEGACY_BOOTSTRAP_USER and LEGACY_BOOTSTRAP_USER_DISPLAY_NAME. The importer finds this user by email or creates it, never relies on a magic numeric ID. Authentication APIs are deliberately out of scope; future authentication will resolve the authenticated user to this ownership model.
 
 ## Legacy JSON Import
 
