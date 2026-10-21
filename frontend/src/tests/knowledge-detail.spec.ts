@@ -10,6 +10,7 @@ import {
   fetchKnowledgeRelationships,
 } from '@/services/knowledge';
 import { fetchMaterials } from '@/services/materials';
+import { fetchNodeEvidence } from '@/services/mastery';
 import type { Material } from '@/types/course';
 import type {
   KnowledgeEdge,
@@ -27,6 +28,7 @@ vi.mock('@/services/knowledge', () => ({
   fetchKnowledgeNodeDetail: vi.fn(),
   fetchKnowledgeRelationships: vi.fn(),
 }));
+vi.mock('@/services/mastery', () => ({ fetchNodeEvidence: vi.fn() }));
 
 const courseId = 7;
 const timestamp = '2026-01-01T00:00:00Z';
@@ -98,7 +100,10 @@ const nodeDetail: KnowledgeNodeDetailResponse = {
       knowledge_node_id: 2,
       material_id: 31,
       source_reference: '第 2 页',
-      excerpt: '向量可进行加法运算。',
+      excerpt: 'AI 归纳，不应作为原文展示。',
+      material_title: '线性代数讲义',
+      original_text_excerpt: '向量可进行加法运算。',
+      original_text_truncated: false,
       created_at: timestamp,
     },
   ],
@@ -157,6 +162,7 @@ const mockedMaterials = vi.mocked(fetchMaterials);
 const mockedModel = vi.mocked(fetchKnowledgeModel);
 const mockedDetail = vi.mocked(fetchKnowledgeNodeDetail);
 const mockedRelationships = vi.mocked(fetchKnowledgeRelationships);
+const mockedEvidence = vi.mocked(fetchNodeEvidence);
 
 async function mountDetail(path = '/courses/7/knowledge/2') {
   const router = createRouter({
@@ -190,6 +196,59 @@ describe('KnowledgeDetailView', () => {
     mockedModel.mockResolvedValue(model);
     mockedDetail.mockResolvedValue(nodeDetail);
     mockedRelationships.mockResolvedValue(relationships);
+    mockedEvidence.mockResolvedValue({
+      course_id: 7,
+      knowledge_node_id: 2,
+      state: {
+        knowledge_node_id: 2,
+        mastery_score: '68.40',
+        mastery_status: 'needs_reinforcement',
+        confidence_level: 'medium',
+        confidence_reason_codes: ['sufficient_evidence'],
+        evidence_count: 4,
+        independent_evidence_count: 4,
+        assessment_count: 2,
+        knowledge_model_version: 'knowledge_v1',
+        algorithm_version: 'mastery_v1',
+        calculated_at: timestamp,
+        calculation_state: 'calculated',
+      },
+      summary: {
+        effective_evidence_count: 4,
+        independent_evidence_count: 4,
+        assessment_count: 2,
+        evidence_returned: 1,
+      },
+      evidence: [
+        {
+          evidence_id: 9,
+          source_type: 'diagnostic',
+          source_assessment_id: 12,
+          source_question_reference: 33,
+          historical_knowledge_node_reference: 2,
+          normalized_score: '1.00000',
+          difficulty: 'medium',
+          attribution_weight: '1.00000',
+          occurred_at: timestamp,
+        },
+      ],
+    });
+  });
+
+  it('shows M5-D evidence explanation only when opened from mastery mode', async () => {
+    const { wrapper } = await mountDetail(
+      '/courses/7/knowledge/2?from=knowledge-structure&mode=mastery',
+    );
+
+    expect(mockedEvidence).toHaveBeenCalledWith(7, 2);
+    expect(wrapper.text()).toContain('我的掌握情况');
+    expect(wrapper.text()).toContain('68%');
+    expect(wrapper.text()).toContain('置信度');
+    expect(wrapper.text()).toContain('中');
+    expect(wrapper.text()).toContain('诊断 #12');
+    expect(wrapper.text()).toContain('历史题目 #33');
+    expect(wrapper.text()).not.toContain('selected_options');
+    expect(wrapper.get('.knowledge-page__map-link').attributes('href')).toContain('mode=mastery');
   });
 
   it('keeps source excerpts and relation evidence collapsed until the user asks for them', async () => {
@@ -200,7 +259,9 @@ describe('KnowledgeDetailView', () => {
     expect(wrapper.text()).toContain('向量是线性空间中的对象。');
     expect(wrapper.text()).toContain('线性代数讲义');
     expect(wrapper.text()).toContain('第 2 页');
-    expect(wrapper.text()).not.toContain('向量可进行加法运算。');
+    expect(wrapper.text()).toContain('来源页内容节选（已核验）');
+    expect(wrapper.text()).toContain('向量可进行加法运算。');
+    expect(wrapper.text()).not.toContain('AI 归纳，不应作为原文展示。');
     expect(wrapper.text()).toContain('知识关联依据');
     expect(wrapper.text()).not.toContain('结构约束说明 · 非资料原文');
     expect(wrapper.text()).not.toContain('原文支持这条先修关系。');
@@ -208,15 +269,6 @@ describe('KnowledgeDetailView', () => {
     expect(wrapper.get('.knowledge-page__map-link').attributes('href')).toBe(
       '/courses/7?tab=knowledge-structure&nodeId=2',
     );
-
-    const sourceDisclosure = wrapper.get('.knowledge-page__source-list button');
-    expect(sourceDisclosure.attributes('aria-expanded')).toBe('false');
-    await sourceDisclosure.trigger('click');
-    expect(sourceDisclosure.attributes('aria-expanded')).toBe('true');
-    expect(wrapper.text()).toContain('知识点来源依据');
-    expect(wrapper.text()).toContain('向量可进行加法运算。');
-    await sourceDisclosure.trigger('click');
-    expect(wrapper.text()).not.toContain('向量可进行加法运算。');
 
     const relationDisclosure = wrapper.get('.knowledge-page__evidence button');
     expect(relationDisclosure.attributes('aria-expanded')).toBe('false');
@@ -263,7 +315,15 @@ describe('KnowledgeDetailView', () => {
     mockedDetail.mockResolvedValue({
       node: { ...nodes[1]!, description: '' },
       related_edges: [],
-      sources: [{ ...nodeDetail.sources[0]!, material_id: 999, source_reference: '第 2 页' }],
+      sources: [
+        {
+          ...nodeDetail.sources[0]!,
+          material_id: 999,
+          source_reference: '第 2 页',
+          material_title: null,
+          original_text_excerpt: null,
+        },
+      ],
     });
     mockedRelationships.mockRejectedValue(
       new ApiError('尚未建立关系', { code: 'KNOWLEDGE_RELATIONSHIP_NOT_READY', status: 409 }),
@@ -272,7 +332,7 @@ describe('KnowledgeDetailView', () => {
 
     expect(wrapper.text()).toContain('尚无经过保存的概念说明');
     expect(wrapper.text()).toContain('来源资料已删除或不可访问');
-    expect(wrapper.text()).toContain('资料不可访问，无法打开原文');
+    expect(wrapper.text()).toContain('暂无可直接预览的来源原文');
     expect(wrapper.text()).toContain('当前还没有建立这个知识点与其他知识点的联系');
     expect(wrapper.find('.knowledge-page__evidence').exists()).toBe(false);
     expect(
@@ -295,14 +355,14 @@ describe('KnowledgeDetailView', () => {
           ...nodeDetail.sources[0]!,
           id: 62,
           source_reference: '第 5 页',
-          excerpt: '同一资料中的另一处真实依据。',
+          original_text_excerpt: '同一资料中的另一处真实依据。',
         },
         {
           ...nodeDetail.sources[0]!,
           id: 63,
           material_id: 32,
           source_reference: '',
-          excerpt: '没有位置字段的真实依据。',
+          original_text_excerpt: '没有位置字段的真实依据。',
         },
       ],
     });
@@ -315,7 +375,7 @@ describe('KnowledgeDetailView', () => {
     expect(sourceGroups[1]!.text()).toContain('线性代数习题课');
     expect(wrapper.text()).not.toContain('第 0 页');
     expect(wrapper.text()).not.toContain('没有位置字段的真实依据。');
-    expect(wrapper.findAll('.knowledge-page__source-list button')).toHaveLength(3);
+    expect(wrapper.text()).toContain('更多已核验来源已折叠');
   });
 
   it('shows a relationship evidence error instead of disguising it as an empty state', async () => {
@@ -328,12 +388,11 @@ describe('KnowledgeDetailView', () => {
     expect(wrapper.find('.knowledge-page__evidence').exists()).toBe(false);
   });
 
-  it('resets disclosure state when navigating directly to another knowledge detail', async () => {
+  it('does not retain a source preview when navigating directly to another knowledge detail', async () => {
     mockedDetail.mockImplementation((_courseId, id) =>
       Promise.resolve(id === 2 ? nodeDetail : { node: nodes[2]!, related_edges: [], sources: [] }),
     );
     const { router, wrapper } = await mountDetail();
-    await wrapper.get('.knowledge-page__source-list button').trigger('click');
     expect(wrapper.text()).toContain('向量可进行加法运算。');
 
     await router.push('/courses/7/knowledge/3');

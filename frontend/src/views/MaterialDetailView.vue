@@ -315,7 +315,7 @@ watch(
               v-else
               :icon="Reading"
               title="尚未生成摘要"
-              description="生成后将按核心概览、关键概念、重要内容、易错点与复习建议组织资料内容。"
+              description="将资料整理为核心概览、重要概念和复习要点。"
             >
               <template v-if="!parseFailed" #action
                 ><el-button type="primary" :loading="summaryLoading" @click="generateSummary"
@@ -353,7 +353,7 @@ watch(
               v-else
               :icon="DocumentCopy"
               title="尚未生成学习卡片"
-              description="生成后可通过问题与答案快速复习当前资料的概念、关系与易混点。"
+              description="从资料中生成便于回顾的问答卡片。"
             >
               <template v-if="!parseFailed" #action
                 ><el-button type="primary" :loading="cardsLoading" @click="generateCards"
@@ -369,7 +369,7 @@ watch(
               <el-icon aria-hidden="true"><ChatRound /></el-icon>
               <div>
                 <h2>针对当前资料提问</h2>
-                <p>回答只基于当前资料的已解析内容，不作为学习诊断或 AI Tutor。</p>
+                <p>围绕当前资料提问，并查看回答依据。回答只基于已解析内容。</p>
               </div>
             </div>
             <form @submit.prevent="askQuestion">

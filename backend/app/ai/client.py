@@ -102,7 +102,12 @@ class OpenAICompatibleLLMClient(LLMClient):
                 self._log(operation, started, True)
                 return GeneratedStructuredOutput(result, self.provider, self.model)
             except HTTPError as error:
-                code = "AI_RATE_LIMITED" if error.code == 429 else "AI_PROVIDER_ERROR"
+                if error.code in {401, 403}:
+                    code = "AI_AUTHENTICATION_FAILED"
+                elif error.code == 429:
+                    code = "AI_RATE_LIMITED"
+                else:
+                    code = "AI_PROVIDER_ERROR"
                 retryable = error.code == 429 or error.code >= 500
                 last_error = AIServiceError(code, "AI 服务暂时不可用，请稍后重试。", retryable=retryable)
             except TimeoutError, socket.timeout:

@@ -52,6 +52,9 @@ class KnowledgeNodeNotFoundError(KnowledgeModelError):
         super().__init__("KNOWLEDGE_NODE_NOT_FOUND", "Knowledge node not found.")
 
 
+_SOURCE_PREVIEW_MAX_CHARS = 300
+
+
 class KnowledgeModelService:
     def __init__(
         self,
@@ -153,6 +156,65 @@ class KnowledgeModelService:
                 self.source_repository.list_for_node(node_id),
                 self.edge_repository.list_current_for_node(node_id),
             )
+
+    def get_verified_source_previews(self, course_id: int, node_id: int) -> list[dict[str, object]]:
+        """Return bounded source text only when its persisted location can be verified.
+
+        ``KnowledgeSource.excerpt`` is retained for backwards compatibility, but is
+        not treated as a quotation. The preview comes exclusively from the saved M2
+        material segment whose reference exactly matches the source record.
+        """
+        with self.session.begin():
+            owner = self._get_or_create_owner()
+            self._require_course(course_id, owner.id)
+            node = self.node_repository.get_by_id(node_id)
+            if node is None or node.course_id != course_id or not node.is_active:
+                raise KnowledgeNodeNotFoundError()
+
+            previews: list[dict[str, object]] = []
+            for source in self.source_repository.list_for_node(node_id):
+                preview: dict[str, object] = {
+                    "id": source.id,
+                    "knowledge_node_id": source.knowledge_node_id,
+                    "material_id": source.material_id,
+                    "source_reference": source.source_reference,
+                    "excerpt": source.excerpt,
+                    "material_title": None,
+                    "original_text_excerpt": None,
+                    "original_text_truncated": False,
+                    "created_at": source.created_at,
+                }
+                material = self.material_repository.get_by_id(source.material_id)
+                if material is None or material.course_id != course_id:
+                    previews.append(preview)
+                    continue
+
+                preview["material_title"] = material.title
+                if material.extraction_status not in {"SUCCESS", "EXTRACTED"}:
+                    previews.append(preview)
+                    continue
+
+                content = self.content_repository.get_for_material(material.id)
+                if content is None or not isinstance(content.segments, list):
+                    previews.append(preview)
+                    continue
+
+                original_text = next(
+                    (
+                        segment.get("text", "").strip()
+                        for segment in content.segments
+                        if isinstance(segment, dict)
+                        and segment.get("source_reference") == source.source_reference
+                        and isinstance(segment.get("text"), str)
+                        and segment["text"].strip()
+                    ),
+                    None,
+                )
+                if original_text is not None:
+                    preview["original_text_excerpt"] = original_text[:_SOURCE_PREVIEW_MAX_CHARS]
+                    preview["original_text_truncated"] = len(original_text) > _SOURCE_PREVIEW_MAX_CHARS
+                previews.append(preview)
+            return previews
 
     def create_node(self, course_id: int, payload: KnowledgeNodeCreate) -> KnowledgeNode:
         with self.session.begin():

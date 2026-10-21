@@ -33,6 +33,8 @@ class Settings(BaseSettings):
     knowledge_canonicalization_block_size: int = Field(default=12, ge=2, le=20)
     knowledge_relationship_max_nodes: int = Field(default=120, ge=1, le=500)
     knowledge_relationship_block_size: int = Field(default=12, ge=2, le=20)
+    diagnostic_question_max_count: int = Field(default=4, ge=1, le=8)
+    diagnostic_question_similarity_threshold: float = Field(default=0.9, ge=0.75, le=1.0)
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

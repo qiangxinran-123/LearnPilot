@@ -1,7 +1,9 @@
 from fastapi import APIRouter
 
 from backend.app.api.courses import router as courses_router
+from backend.app.api.diagnostics import router as diagnostics_router
 from backend.app.api.knowledge import router as knowledge_router
+from backend.app.api.mastery import router as mastery_router
 from backend.app.api.materials import router as materials_router
 from backend.app.core.config import APP_NAME, APP_VERSION
 
@@ -9,6 +11,8 @@ router = APIRouter()
 router.include_router(courses_router)
 router.include_router(materials_router)
 router.include_router(knowledge_router)
+router.include_router(diagnostics_router)
+router.include_router(mastery_router)
 
 
 @router.get("/api")

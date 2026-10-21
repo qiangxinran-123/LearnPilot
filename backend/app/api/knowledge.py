@@ -242,14 +242,19 @@ def get_knowledge_node_detail(
     service: KnowledgeModelService = Depends(get_knowledge_model_service),
 ) -> dict[str, object]:
     try:
-        node, sources, related_edges = service.get_node_detail(course_id, node_id)
+        node, _sources, related_edges = service.get_node_detail(course_id, node_id)
+        sources = service.get_verified_source_previews(course_id, node_id)
     except ResourceNotFoundError as error:
         raise course_not_found() from error
     except KnowledgeNodeNotFoundError as error:
         raise ApiError(404, error.code, error.message) from error
     except KnowledgeModelError as error:
         raise ApiError(400, error.code, error.message) from error
-    return {"node": node, "sources": sources, "related_edges": related_edges}
+    return {
+        "node": node,
+        "sources": sources,
+        "related_edges": related_edges,
+    }
 
 
 @router.post(

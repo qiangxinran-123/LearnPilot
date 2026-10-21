@@ -141,6 +141,9 @@ describe('MaterialDetailView', () => {
     expect(wrapper.text()).toContain('缓存是高速存储器。');
     expect(wrapper.text()).toContain('尚未生成摘要');
     expect(wrapper.text()).toContain('尚未生成学习卡片');
+    expect(wrapper.text()).toContain('将资料整理为核心概览、重要概念和复习要点。');
+    expect(wrapper.text()).toContain('从资料中生成便于回顾的问答卡片。');
+    expect(wrapper.text()).toContain('围绕当前资料提问，并查看回答依据。');
   });
 
   it('shows saved summary and cards without regenerating on page load', async () => {

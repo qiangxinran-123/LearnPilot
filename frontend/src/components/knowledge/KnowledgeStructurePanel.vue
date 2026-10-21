@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ArrowRight, MagicStick, RefreshRight, Search } from '@element-plus/icons-vue';
-import { computed, nextTick, ref, watch } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
+import { useRoute, useRouter, type LocationQueryRaw } from 'vue-router';
 import type { ElTree } from 'element-plus';
 
 import { presentBuildStatus } from '@/components/knowledge/buildStatus';
@@ -19,6 +19,14 @@ import {
 } from '@/components/knowledge/treeAdapter';
 import type { Material } from '@/types/course';
 import type { KnowledgeBuildStatus, KnowledgeModelResponse } from '@/types/knowledge';
+import { fetchCourseMastery } from '@/services/mastery';
+import { normalizeApiError } from '@/services/http';
+import type { KnowledgeNodeMastery } from '@/types/mastery';
+import {
+  confidenceLabel,
+  masteryScoreLabel,
+  masteryStatusLabel,
+} from '@/components/knowledge/masteryPresentation';
 
 const props = defineProps<{
   courseId: number;
@@ -35,6 +43,23 @@ const router = useRouter();
 const treeRef = ref<InstanceType<typeof ElTree>>();
 const search = ref('');
 const focusNodeId = ref<number | null>(null);
+const masteryByNodeId = ref<ReadonlyMap<number, KnowledgeNodeMastery>>(new Map());
+const masteryState = ref<'idle' | 'loading' | 'ready' | 'error'>('idle');
+const masteryError = ref('');
+let masteryRequest = 0;
+let loadedMasteryCourseId: number | null = null;
+let observedMasteryCourseId = props.courseId;
+let observedMasteryModel = props.model;
+
+const mapMode = computed<'structure' | 'mastery'>({
+  get: () => (route.query.mode === 'mastery' ? 'mastery' : 'structure'),
+  set(mode) {
+    const query: LocationQueryRaw = { ...route.query, tab: 'knowledge-structure' };
+    if (mode === 'mastery') query.mode = 'mastery';
+    else delete query.mode;
+    void router.replace({ name: 'course-detail', params: { courseId: props.courseId }, query });
+  },
+});
 
 const hasNodes = computed(() => (props.model?.nodes.length ?? 0) > 0);
 const treeData = computed(() => (props.model ? adaptKnowledgeModelToTree(props.model) : null));
@@ -71,8 +96,41 @@ const buildPresentation = computed(() => (props.status ? presentBuildStatus(prop
 const detailRoute = computed(() => ({
   name: 'knowledge-detail',
   params: { courseId: props.courseId, nodeId: focusNodeId.value },
-  query: { from: 'knowledge-structure' },
+  query: {
+    from: 'knowledge-structure',
+    ...(mapMode.value === 'mastery' ? { mode: 'mastery' } : {}),
+  },
 }));
+const focusedMastery = computed(() =>
+  focusNodeId.value === null ? undefined : masteryByNodeId.value.get(focusNodeId.value),
+);
+
+async function loadMastery(force = false): Promise<void> {
+  if (!props.model || mapMode.value !== 'mastery') return;
+  if (!force && loadedMasteryCourseId === props.courseId && masteryState.value === 'ready') return;
+  const request = ++masteryRequest;
+  const requestedCourseId = props.courseId;
+  masteryState.value = 'loading';
+  masteryError.value = '';
+  try {
+    const response = await fetchCourseMastery(requestedCourseId);
+    if (request !== masteryRequest || requestedCourseId !== props.courseId) return;
+    if (response.course_id !== requestedCourseId) throw new Error('Mastery course mismatch');
+    const currentIds = canonicalNodeIndex(props.model);
+    masteryByNodeId.value = new Map(
+      response.nodes
+        .filter((item) => currentIds.has(item.knowledge_node_id))
+        .map((item) => [item.knowledge_node_id, item]),
+    );
+    loadedMasteryCourseId = requestedCourseId;
+    masteryState.value = 'ready';
+  } catch (error: unknown) {
+    if (request !== masteryRequest || requestedCourseId !== props.courseId) return;
+    masteryByNodeId.value = new Map();
+    masteryError.value = normalizeApiError(error).message;
+    masteryState.value = 'error';
+  }
+}
 
 function queryNodeId(): number | null {
   const raw = Array.isArray(route.query.nodeId) ? route.query.nodeId[0] : route.query.nodeId;
@@ -136,6 +194,25 @@ watch(
   },
   { immediate: true },
 );
+watch(
+  [() => props.courseId, () => props.model, mapMode],
+  ([nextCourseId, nextModel, mode]) => {
+    if (nextCourseId !== observedMasteryCourseId || nextModel !== observedMasteryModel) {
+      masteryRequest += 1;
+      loadedMasteryCourseId = null;
+      masteryByNodeId.value = new Map();
+      masteryState.value = 'idle';
+      masteryError.value = '';
+      observedMasteryCourseId = nextCourseId;
+      observedMasteryModel = nextModel;
+    }
+    if (mode === 'mastery') void loadMastery();
+  },
+  { immediate: true },
+);
+onBeforeUnmount(() => {
+  masteryRequest += 1;
+});
 </script>
 
 <template>
@@ -145,6 +222,10 @@ watch(
         <h2 id="knowledge-map-heading">课程知识地图</h2>
         <p>从课程主题中找到知识点，沿真实的直接先修关系逐步探索。</p>
       </div>
+      <el-radio-group v-model="mapMode" size="small" aria-label="知识地图展示模式">
+        <el-radio-button value="structure">课程结构</el-radio-button>
+        <el-radio-button value="mastery">我的掌握状态</el-radio-button>
+      </el-radio-group>
       <el-button
         v-if="buildPresentation?.action && status?.can_build"
         type="primary"
@@ -169,6 +250,21 @@ watch(
     <p v-if="modelError && model" class="knowledge-map__warning" role="alert">
       最新结果加载失败，当前仍展示已读取的知识结构：{{ modelError }}
     </p>
+    <p
+      v-if="mapMode === 'mastery' && masteryState === 'loading'"
+      class="knowledge-map__status"
+      role="status"
+    >
+      正在读取已保存的掌握状态…
+    </p>
+    <div
+      v-if="mapMode === 'mastery' && masteryState === 'error'"
+      class="knowledge-map__warning"
+      role="alert"
+    >
+      掌握状态暂不可用，课程结构仍可正常查看：{{ masteryError }}
+      <el-button link type="primary" @click="loadMastery(true)">重试</el-button>
+    </div>
 
     <div v-if="modelState === 'loading' && !model" class="knowledge-map__message" role="status">
       正在加载课程知识结构…
@@ -235,7 +331,10 @@ watch(
                   :aria-current="data.id === focusNodeId ? 'true' : undefined"
                   @click.stop="focusNode(data.id)"
                 >
-                  {{ data.label }}
+                  <span>{{ data.label }}</span>
+                  <small v-if="mapMode === 'mastery'">
+                    {{ masteryScoreLabel(masteryByNodeId.get(data.id)) }}
+                  </small>
                 </button>
               </template>
             </el-tree>
@@ -246,7 +345,12 @@ watch(
         </aside>
 
         <main class="knowledge-map__main">
-          <KnowledgeFocusGraph :data="focusData" @focus="focusNode" />
+          <KnowledgeFocusGraph
+            :data="focusData"
+            :mastery-mode="mapMode === 'mastery'"
+            :mastery-by-node-id="masteryByNodeId"
+            @focus="focusNode"
+          />
           <p v-if="focusData.ignoredEdgeIds.length" class="knowledge-map__warning" role="status">
             {{ focusData.ignoredEdgeIds.length }} 条异常先修关系未展示。
           </p>
@@ -266,6 +370,26 @@ watch(
                 </button>
               </div>
               <p>{{ focusData.focusNode.description || '当前知识点尚无已保存的简短说明。' }}</p>
+              <dl v-if="mapMode === 'mastery'" class="knowledge-preview__mastery">
+                <div>
+                  <dt>掌握度</dt>
+                  <dd>{{ masteryScoreLabel(focusedMastery) }}</dd>
+                </div>
+                <div>
+                  <dt>状态</dt>
+                  <dd>
+                    {{ masteryStatusLabel[focusedMastery?.mastery_status ?? 'not_assessed'] }}
+                  </dd>
+                </div>
+                <div>
+                  <dt>置信度</dt>
+                  <dd>{{ confidenceLabel[focusedMastery?.confidence_level ?? 'insufficient'] }}</dd>
+                </div>
+                <div>
+                  <dt>有效证据</dt>
+                  <dd>{{ focusedMastery?.evidence_count ?? 0 }} 条</dd>
+                </div>
+              </dl>
             </div>
             <RouterLink class="knowledge-preview__detail" :to="detailRoute"
               >查看完整知识详情 <el-icon aria-hidden="true"><ArrowRight /></el-icon
@@ -434,6 +558,12 @@ watch(
   overflow-wrap: anywhere;
   cursor: pointer;
 }
+.knowledge-navigator__node small {
+  margin-left: 0.45rem;
+  color: #687891;
+  font-size: 0.68rem;
+  font-weight: 700;
+}
 .knowledge-navigator__node:focus-visible {
   border-radius: 5px;
   outline: 2px solid var(--lp-primary);
@@ -475,6 +605,28 @@ watch(
   line-height: 1.7;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+.knowledge-preview__mastery {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  margin: 0.85rem 0 0;
+}
+.knowledge-preview__mastery div {
+  min-width: 6.5rem;
+  padding: 0.55rem 0.7rem;
+  border-radius: 10px;
+  background: #f4f7fb;
+}
+.knowledge-preview__mastery dt {
+  color: var(--lp-text-secondary);
+  font-size: 0.68rem;
+}
+.knowledge-preview__mastery dd {
+  margin: 0.18rem 0 0;
+  color: var(--lp-ink);
+  font-size: 0.8rem;
+  font-weight: 700;
 }
 .knowledge-preview__topics {
   display: flex;

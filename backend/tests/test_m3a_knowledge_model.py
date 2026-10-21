@@ -627,7 +627,55 @@ def test_knowledge_model_and_node_detail_read_api(database) -> None:
     assert not {"mastery", "progress", "confidence", "student_status"} & set(json.dumps(model).split('"'))
     assert detail["node"]["id"] == child.id
     assert detail["sources"][0]["source_reference"] == seed.source_reference
+    assert detail["sources"][0]["material_title"] == "Cache notes"
+    assert detail["sources"][0]["original_text_excerpt"] == "A cache stores recently used data."
+    assert detail["sources"][0]["original_text_truncated"] is False
     assert len(detail["related_edges"]) == 1
+
+
+def test_node_source_preview_never_falls_back_to_an_unverified_reference(database) -> None:
+    factory, settings = database
+    with factory() as session:
+        seed = seed_courses(session, settings)
+        service = make_service(session, settings)
+        node = create_node(service, seed.course_id, "Cache")
+        service.create_source(
+            seed.course_id,
+            node.id,
+            KnowledgeSourceCreate(material_id=seed.material_id, source_reference=seed.source_reference),
+        )
+        # Simulate a legacy invalid relation: the read API must not disclose text
+        # from a material outside the requested course.
+        with session.begin():
+            session.add_all(
+                [
+                    KnowledgeSource(
+                        knowledge_node_id=node.id,
+                        material_id=seed.second_material_id,
+                        source_reference="TXT segment 1",
+                        excerpt="Do not present this as a source quote.",
+                    ),
+                    KnowledgeSource(
+                        knowledge_node_id=node.id,
+                        material_id=seed.material_id,
+                        source_reference="PDF 第 99 页",
+                        excerpt="Do not invent a page preview.",
+                    ),
+                ]
+            )
+
+        detail = KnowledgeNodeDetailResponse.model_validate(
+            get_knowledge_node_detail(seed.course_id, node.id, service)
+        ).model_dump(mode="json")
+
+    verified = next(item for item in detail["sources"] if item["source_reference"] == seed.source_reference)
+    invalid = next(item for item in detail["sources"] if item["material_id"] == seed.second_material_id)
+    invalid_reference = next(item for item in detail["sources"] if item["source_reference"] == "PDF 第 99 页")
+    assert verified["original_text_excerpt"] == "A cache stores recently used data."
+    assert invalid["material_title"] is None
+    assert invalid["original_text_excerpt"] is None
+    assert invalid_reference["material_title"] == "Cache notes"
+    assert invalid_reference["original_text_excerpt"] is None
 
 
 def test_knowledge_read_api_404_contract(database) -> None:

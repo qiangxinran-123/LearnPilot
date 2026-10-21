@@ -5,6 +5,7 @@ import { ArrowLeft, ArrowRight, Document, Link as LinkIcon } from '@element-plus
 
 import ErrorState from '@/components/feedback/ErrorState.vue';
 import LoadingBlock from '@/components/feedback/LoadingBlock.vue';
+import KnowledgeMasteryDetail from '@/components/knowledge/KnowledgeMasteryDetail.vue';
 import { fetchCourse } from '@/services/courses';
 import { normalizeApiError } from '@/services/http';
 import {
@@ -13,6 +14,7 @@ import {
   fetchKnowledgeRelationships,
 } from '@/services/knowledge';
 import { fetchMaterials } from '@/services/materials';
+import { fetchNodeEvidence } from '@/services/mastery';
 import type { CourseSummary, Material } from '@/types/course';
 import type {
   KnowledgeEdge,
@@ -23,6 +25,7 @@ import type {
   KnowledgeRelationshipsResponse,
   KnowledgeSource,
 } from '@/types/knowledge';
+import type { KnowledgeEvidenceExplanation } from '@/types/mastery';
 
 type RelationGroupKey = 'parent' | 'child' | 'prerequisite' | 'dependent';
 type RelationGroup = {
@@ -45,12 +48,14 @@ type SourceGroup = {
 const route = useRoute();
 const courseId = computed(() => Number(route.params.courseId));
 const nodeId = computed(() => Number(route.params.nodeId));
+const showMastery = computed(() => route.query.mode === 'mastery');
 const returnTab = computed(() =>
   route.query.from === 'knowledge-structure' ? 'knowledge-structure' : 'overview',
 );
 const returnQuery = computed(() => ({
   tab: returnTab.value,
   ...(returnTab.value === 'knowledge-structure' ? { nodeId: String(nodeId.value) } : {}),
+  ...(showMastery.value ? { mode: 'mastery' } : {}),
 }));
 const course = ref<CourseSummary | null>(null);
 const detail = ref<KnowledgeNodeDetailResponse | null>(null);
@@ -61,9 +66,12 @@ const state = ref<'loading' | 'ready' | 'error'>('loading');
 const errorMessage = ref('');
 const materialsNotice = ref('');
 const evidenceNotice = ref('');
-const expandedSourceIds = ref<Set<number>>(new Set());
 const relationshipEvidenceExpanded = ref(false);
+const masteryExplanation = ref<KnowledgeEvidenceExplanation | null>(null);
+const masteryLoading = ref(false);
+const masteryError = ref('');
 let requestSequence = 0;
+let masteryRequestSequence = 0;
 
 const importanceLabel = computed(
   () => ({ low: '低', medium: '中', high: '高' })[detail.value?.node.importance ?? 'medium'],
@@ -186,6 +194,16 @@ const sourceGroups = computed<SourceGroup[]>(() => {
     sources: [...sources].sort((a, b) => a.id - b.id),
   }));
 });
+const previewSourceIds = computed(
+  () =>
+    new Set(
+      validSources.value
+        .filter((source) => Boolean(source.original_text_excerpt?.trim()))
+        .sort((left, right) => left.id - right.id)
+        .slice(0, 2)
+        .map((source) => source.id),
+    ),
+);
 const learningMaterials = computed(() => {
   const ids = new Set(validSources.value.map((source) => source.material_id));
   for (const row of evidenceRows.value) {
@@ -210,8 +228,45 @@ function nodeRoute(id: number) {
   return {
     name: 'knowledge-detail',
     params: { courseId: courseId.value, nodeId: id },
-    query: { from: returnTab.value },
+    query: { from: returnTab.value, ...(showMastery.value ? { mode: 'mastery' } : {}) },
   };
+}
+
+async function loadMastery(): Promise<void> {
+  const sequence = ++masteryRequestSequence;
+  masteryExplanation.value = null;
+  masteryError.value = '';
+  if (!showMastery.value) {
+    masteryLoading.value = false;
+    return;
+  }
+  const requestedCourseId = courseId.value;
+  const requestedNodeId = nodeId.value;
+  masteryLoading.value = true;
+  try {
+    const explanation = await fetchNodeEvidence(requestedCourseId, requestedNodeId);
+    if (
+      sequence !== masteryRequestSequence ||
+      requestedCourseId !== courseId.value ||
+      requestedNodeId !== nodeId.value
+    ) {
+      return;
+    }
+    if (
+      explanation.course_id !== requestedCourseId ||
+      explanation.knowledge_node_id !== requestedNodeId ||
+      explanation.state.knowledge_node_id !== requestedNodeId
+    ) {
+      throw new Error('Mastery node mismatch');
+    }
+    masteryExplanation.value = explanation;
+  } catch (error: unknown) {
+    if (sequence === masteryRequestSequence) {
+      masteryError.value = normalizeApiError(error).message;
+    }
+  } finally {
+    if (sequence === masteryRequestSequence) masteryLoading.value = false;
+  }
 }
 
 function materialRoute(materialId: number, tab: string, sourceReference?: string) {
@@ -228,19 +283,14 @@ function evidenceTypeLabel(evidence: KnowledgeEdgeEvidence): string {
   return '模型关系判断 · 非资料原文';
 }
 
-function hasSourceEvidence(source: KnowledgeSource): boolean {
-  return Boolean(source.excerpt?.trim());
+function sourcePreviewLabel(source: KnowledgeSource): string {
+  return /(?:PDF\s*)?第\s*\d+\s*页/i.test(source.source_reference)
+    ? '来源页内容节选（已核验）'
+    : '资料原文节选（已核验）';
 }
 
-function isSourceEvidenceExpanded(sourceId: number): boolean {
-  return expandedSourceIds.value.has(sourceId);
-}
-
-function toggleSourceEvidence(sourceId: number): void {
-  const next = new Set(expandedSourceIds.value);
-  if (next.has(sourceId)) next.delete(sourceId);
-  else next.add(sourceId);
-  expandedSourceIds.value = next;
+function sourceMaterialTitle(group: SourceGroup): string {
+  return group.material?.title || group.sources[0]?.material_title || '来源资料已删除或不可访问';
 }
 
 async function loadDetail(): Promise<void> {
@@ -252,7 +302,6 @@ async function loadDetail(): Promise<void> {
   relationships.value = null;
   materialsNotice.value = '';
   evidenceNotice.value = '';
-  expandedSourceIds.value = new Set();
   relationshipEvidenceExpanded.value = false;
   errorMessage.value = '';
   state.value = 'loading';
@@ -331,11 +380,14 @@ async function loadDetail(): Promise<void> {
     }
   }
   state.value = 'ready';
+  void loadMastery();
 }
 
 watch([courseId, nodeId], () => void loadDetail(), { immediate: true });
+watch(showMastery, () => void loadMastery());
 onBeforeUnmount(() => {
   requestSequence += 1;
+  masteryRequestSequence += 1;
 });
 </script>
 
@@ -373,11 +425,23 @@ onBeforeUnmount(() => {
         :to="{
           name: 'course-detail',
           params: { courseId },
-          query: { tab: 'knowledge-structure', nodeId: String(nodeId) },
+          query: {
+            tab: 'knowledge-structure',
+            nodeId: String(nodeId),
+            ...(showMastery ? { mode: 'mastery' } : {}),
+          },
         }"
       >
         在知识地图中查看 <el-icon aria-hidden="true"><ArrowRight /></el-icon>
       </RouterLink>
+
+      <KnowledgeMasteryDetail
+        v-if="showMastery"
+        :loading="masteryLoading"
+        :error="masteryError"
+        :explanation="masteryExplanation"
+        @retry="loadMastery"
+      />
 
       <div class="knowledge-page__grid">
         <div class="knowledge-page__main">
@@ -457,7 +521,7 @@ onBeforeUnmount(() => {
                 <div class="knowledge-page__source-heading">
                   <el-icon aria-hidden="true"><Document /></el-icon>
                   <div>
-                    <h3>{{ group.material?.title || '来源资料已删除或不可访问' }}</h3>
+                    <h3>{{ sourceMaterialTitle(group) }}</h3>
                     <p v-if="group.material">{{ materialType(group.material) }}</p>
                   </div>
                 </div>
@@ -471,34 +535,39 @@ onBeforeUnmount(() => {
                     </p>
                     <div class="knowledge-page__source-actions">
                       <RouterLink
-                        v-if="group.material"
+                        v-if="group.material || source.material_title"
                         class="knowledge-page__inline-link"
                         :to="materialRoute(source.material_id, 'content', source.source_reference)"
                       >
                         查看资料 <el-icon aria-hidden="true"><ArrowRight /></el-icon>
                       </RouterLink>
-                      <button
-                        v-if="hasSourceEvidence(source)"
-                        type="button"
-                        class="knowledge-page__disclosure"
-                        :aria-expanded="isSourceEvidenceExpanded(source.id)"
-                        :aria-controls="`source-evidence-${source.id}`"
-                        @click="toggleSourceEvidence(source.id)"
-                      >
-                        {{ isSourceEvidenceExpanded(source.id) ? '收起依据' : '查看依据' }}
-                      </button>
                     </div>
                     <div
-                      v-if="isSourceEvidenceExpanded(source.id)"
+                      v-if="source.original_text_excerpt && previewSourceIds.has(source.id)"
                       :id="`source-evidence-${source.id}`"
                       class="knowledge-page__source-evidence"
                       role="region"
-                      :aria-label="`${group.material?.title || '当前资料'}的知识点来源依据`"
+                      :aria-label="`${sourceMaterialTitle(group)}的已核验资料原文`"
                     >
-                      <p>知识点来源依据</p>
-                      <blockquote>{{ source.excerpt }}</blockquote>
+                      <p>{{ sourcePreviewLabel(source) }}</p>
+                      <blockquote>{{ source.original_text_excerpt }}</blockquote>
+                      <small v-if="source.original_text_truncated"
+                        >节选已截短；可查看资料阅读完整内容。</small
+                      >
                     </div>
-                    <p v-if="!group.material" class="knowledge-page__unavailable">
+                    <p
+                      v-else-if="!source.original_text_excerpt"
+                      class="knowledge-page__unavailable"
+                    >
+                      暂无可直接预览的来源原文；请查看资料确认来源位置。
+                    </p>
+                    <p v-else class="knowledge-page__unavailable">
+                      更多已核验来源已折叠；可查看资料阅读完整内容。
+                    </p>
+                    <p
+                      v-if="!group.material && !source.material_title"
+                      class="knowledge-page__unavailable"
+                    >
                       资料不可访问，无法打开原文。
                     </p>
                   </li>

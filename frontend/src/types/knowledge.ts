@@ -31,6 +31,9 @@ export interface KnowledgeSource {
   material_id: number;
   source_reference: string;
   excerpt: string | null;
+  material_title?: string | null;
+  original_text_excerpt?: string | null;
+  original_text_truncated?: boolean;
   created_at: string;
 }
 

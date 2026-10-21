@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed } from 'vue';
 
 import type { Material } from '@/types/course';
 import type { KnowledgeNodeDetailResponse } from '@/types/knowledge';
@@ -15,8 +15,6 @@ const emit = defineEmits<{
   'update:modelValue': [value: boolean];
 }>();
 
-const expandedSourceIds = ref(new Set<number>());
-
 const importanceLabel = computed(() => {
   const importance = props.detail?.node.importance;
   return { low: '低', medium: '中', high: '高' }[importance ?? 'medium'];
@@ -31,18 +29,10 @@ function materialTitle(materialId: number): string {
   return props.materials.find((material) => material.id === materialId)?.title ?? '课程资料';
 }
 
-function isExpanded(sourceId: number): boolean {
-  return expandedSourceIds.value.has(sourceId);
-}
-
-function toggleExcerpt(sourceId: number): void {
-  const next = new Set(expandedSourceIds.value);
-  if (next.has(sourceId)) {
-    next.delete(sourceId);
-  } else {
-    next.add(sourceId);
-  }
-  expandedSourceIds.value = next;
+function previewLabel(sourceReference: string): string {
+  return /(?:PDF\s*)?第\s*\d+\s*页/i.test(sourceReference)
+    ? '来源页内容节选（已核验）'
+    : '资料原文节选（已核验）';
 }
 </script>
 
@@ -94,14 +84,16 @@ function toggleExcerpt(sourceId: number): void {
           <li v-for="source in detail.sources" :key="source.id">
             <p class="knowledge-source-title">{{ materialTitle(source.material_id) }}</p>
             <p class="knowledge-source-reference">{{ source.source_reference }}</p>
-            <template v-if="source.excerpt">
-              <p class="knowledge-source-excerpt" :class="{ expanded: isExpanded(source.id) }">
-                {{ source.excerpt }}
+            <template v-if="source.original_text_excerpt">
+              <p class="knowledge-source-preview-label">
+                {{ previewLabel(source.source_reference) }}
               </p>
-              <el-button link type="primary" @click="toggleExcerpt(source.id)">
-                {{ isExpanded(source.id) ? '收起摘录' : '展开摘录' }}
-              </el-button>
+              <p class="knowledge-source-excerpt expanded">{{ source.original_text_excerpt }}</p>
+              <small v-if="source.original_text_truncated"
+                >节选已截短；可查看资料阅读完整内容。</small
+              >
             </template>
+            <p v-else class="knowledge-source-unavailable">暂无可直接预览的来源原文。</p>
           </li>
         </ul>
       </section>

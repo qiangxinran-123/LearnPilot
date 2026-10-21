@@ -95,6 +95,11 @@ export const httpClient = {
     return response.data;
   },
 
+  async put<T>(path: string, payload: unknown): Promise<T> {
+    const response = await client.put<T>(path, payload);
+    return response.data;
+  },
+
   async delete<T>(path: string): Promise<T> {
     const response = await client.delete<T>(path);
     return response.data;

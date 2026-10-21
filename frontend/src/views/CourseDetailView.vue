@@ -267,6 +267,9 @@ watch(
                       · {{ formatDate(material.created_at) }}</span
                     >
                   </p>
+                  <p v-if="material.extraction_status === 'SUCCESS'" class="material-row__tools">
+                    打开资料，可生成摘要、制作学习卡片，并针对内容提问。
+                  </p>
                 </div>
                 <el-tag
                   :type="
@@ -279,7 +282,7 @@ watch(
                   effect="plain"
                   >{{ materialStatusLabel(material) }}</el-tag
                 >
-                <el-button plain @click="openMaterial(material)">打开</el-button>
+                <el-button plain @click="openMaterial(material)">查看资料与学习工具</el-button>
               </article>
             </section>
             <section v-else class="materials-empty">

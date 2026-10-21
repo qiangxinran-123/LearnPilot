@@ -3,13 +3,22 @@ import { FullScreen, RefreshLeft, ZoomIn, ZoomOut } from '@element-plus/icons-vu
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
 import type { KnowledgeFocusData } from '@/components/knowledge/knowledgeMapAdapter';
+import {
+  confidenceLabel,
+  masteryScoreLabel,
+  masteryStatusLabel,
+  masteryTone,
+} from '@/components/knowledge/masteryPresentation';
+import type { KnowledgeNodeMastery } from '@/types/mastery';
 
 const props = withDefaults(
   defineProps<{
     data: KnowledgeFocusData;
     initialLimit?: number;
+    masteryMode?: boolean;
+    masteryByNodeId?: ReadonlyMap<number, KnowledgeNodeMastery>;
   }>(),
-  { initialLimit: 5 },
+  { initialLimit: 5, masteryMode: false, masteryByNodeId: () => new Map() },
 );
 
 const emit = defineEmits<{ focus: [nodeId: number] }>();
@@ -53,6 +62,10 @@ const canZoomOut = computed(() => scale.value > minimumScale);
 const canvasStyle = computed(() => ({
   transform: `translate(${translateX.value}px, ${translateY.value}px) scale(${scale.value})`,
 }));
+
+function masteryFor(nodeId: number): KnowledgeNodeMastery | undefined {
+  return props.masteryByNodeId.get(nodeId);
+}
 
 function clampScale(value: number): number {
   return Math.min(maximumScale, Math.max(minimumScale, Number(value.toFixed(2))));
@@ -230,10 +243,17 @@ onBeforeUnmount(() => {
               :key="node.id"
               type="button"
               class="focus-node focus-node--before"
+              :class="masteryMode ? `focus-node--mastery-${masteryTone(masteryFor(node.id))}` : ''"
               @click="emit('focus', node.id)"
             >
               <strong>{{ node.name }}</strong>
               <span>{{ node.description || '查看它与课程中其他知识的联系' }}</span>
+              <small v-if="masteryMode" class="focus-node__mastery">
+                {{ masteryScoreLabel(masteryFor(node.id)) }} ·
+                {{ masteryStatusLabel[masteryFor(node.id)?.mastery_status ?? 'not_assessed'] }} ·
+                置信度
+                {{ confidenceLabel[masteryFor(node.id)?.confidence_level ?? 'insufficient'] }}
+              </small>
             </button>
             <button
               v-if="hiddenPrerequisiteCount > 0"
@@ -256,9 +276,25 @@ onBeforeUnmount(() => {
           aria-labelledby="current-heading"
         >
           <h4 id="current-heading">当前知识点</h4>
-          <article class="focus-node focus-node--current" aria-current="true">
+          <article
+            class="focus-node focus-node--current"
+            :class="
+              masteryMode ? `focus-node--mastery-${masteryTone(masteryFor(data.focusNode.id))}` : ''
+            "
+            aria-current="true"
+          >
             <strong>{{ data.focusNode.name }}</strong>
             <span>{{ data.focusNode.description || '当前尚无已保存的知识点说明。' }}</span>
+            <small v-if="masteryMode" class="focus-node__mastery">
+              {{ masteryScoreLabel(masteryFor(data.focusNode.id)) }} ·
+              {{
+                masteryStatusLabel[masteryFor(data.focusNode.id)?.mastery_status ?? 'not_assessed']
+              }}
+              · 置信度
+              {{
+                confidenceLabel[masteryFor(data.focusNode.id)?.confidence_level ?? 'insufficient']
+              }}
+            </small>
           </article>
         </section>
 
@@ -274,10 +310,17 @@ onBeforeUnmount(() => {
               :key="node.id"
               type="button"
               class="focus-node focus-node--after"
+              :class="masteryMode ? `focus-node--mastery-${masteryTone(masteryFor(node.id))}` : ''"
               @click="emit('focus', node.id)"
             >
               <strong>{{ node.name }}</strong>
               <span>{{ node.description || '查看它与课程中其他知识的联系' }}</span>
+              <small v-if="masteryMode" class="focus-node__mastery">
+                {{ masteryScoreLabel(masteryFor(node.id)) }} ·
+                {{ masteryStatusLabel[masteryFor(node.id)?.mastery_status ?? 'not_assessed'] }} ·
+                置信度
+                {{ confidenceLabel[masteryFor(node.id)?.confidence_level ?? 'insufficient'] }}
+              </small>
             </button>
             <button
               v-if="hiddenDependentCount > 0"
@@ -479,6 +522,42 @@ button.focus-node:focus-visible,
   line-height: 1.45;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
+}
+
+.focus-node .focus-node__mastery {
+  display: block;
+  margin-top: 0.25rem;
+  color: #52627b;
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.focus-node--mastery-good {
+  border-color: #86b8a4;
+  background: #f2faf6;
+}
+
+.focus-node--mastery-cautious,
+.focus-node--mastery-needs_reinforcement {
+  border-color: #c6aa6b;
+  background: #fffaf0;
+}
+
+.focus-node--mastery-possibly_weak {
+  border-color: #d99b75;
+  background: #fff6f0;
+}
+
+.focus-node--mastery-needs_attention {
+  border-color: #d28b8b;
+  background: #fff3f3;
+}
+
+.focus-node--mastery-unassessed {
+  border-style: dashed;
+  border-color: #b6c0cf;
+  background: #f7f8fa;
 }
 
 .focus-node--current {

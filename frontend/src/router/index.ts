@@ -79,6 +79,18 @@ export const productRoutes: RouteRecordRaw[] = [
     meta: { title: '诊断', navLabel: '诊断' },
   },
   {
+    path: '/diagnose/assessments/:assessmentId',
+    name: 'diagnostic-assessment',
+    component: () => import('@/views/DiagnosticAssessmentView.vue'),
+    meta: { title: '诊断答题', navLabel: '诊断' },
+  },
+  {
+    path: '/diagnose/assessments/:assessmentId/result',
+    name: 'diagnostic-report',
+    component: () => import('@/views/DiagnosticReportView.vue'),
+    meta: { title: '诊断报告', navLabel: '诊断' },
+  },
+  {
     path: '/learn',
     name: 'learn',
     component: () => import('@/views/LearnView.vue'),

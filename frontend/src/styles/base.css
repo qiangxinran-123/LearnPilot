@@ -814,6 +814,16 @@ p {
   white-space: nowrap;
 }
 
+.material-row__content .material-row__tools {
+  margin-top: var(--lp-space-1);
+  overflow: visible;
+  color: var(--lp-primary);
+  font-size: 12px;
+  line-height: 1.5;
+  text-overflow: clip;
+  white-space: normal;
+}
+
 .materials-empty {
   display: flex;
   min-height: 190px;

@@ -121,6 +121,9 @@ class KnowledgeSourceResponse(BaseModel):
     material_id: int
     source_reference: str
     excerpt: str | None = None
+    material_title: str | None = None
+    original_text_excerpt: str | None = None
+    original_text_truncated: bool = False
     created_at: datetime
 
 

@@ -187,8 +187,13 @@ def test_transient_http_error_is_retried_then_succeeds(monkeypatch: pytest.Monke
     assert attempts == 2
 
 
-@pytest.mark.parametrize("status", [400, 401, 403])
-def test_nontransient_http_error_is_not_retried(monkeypatch: pytest.MonkeyPatch, status: int) -> None:
+@pytest.mark.parametrize(
+    ("status", "expected_code"),
+    [(400, "AI_PROVIDER_ERROR"), (401, "AI_AUTHENTICATION_FAILED"), (403, "AI_AUTHENTICATION_FAILED")],
+)
+def test_nontransient_http_error_is_not_retried(
+    monkeypatch: pytest.MonkeyPatch, status: int, expected_code: str
+) -> None:
     attempts = 0
 
     def fake_urlopen(*args: object, **kwargs: object) -> FakeResponse:
@@ -199,7 +204,7 @@ def test_nontransient_http_error_is_not_retried(monkeypatch: pytest.MonkeyPatch,
     monkeypatch.setattr("backend.app.ai.client.urlopen", fake_urlopen)
     with pytest.raises(AIServiceError) as captured:
         make_client().generate_structured(operation="test", messages=[], schema=SmallOutput)
-    assert captured.value.code == "AI_PROVIDER_ERROR"
+    assert captured.value.code == expected_code
     assert attempts == 1
 
 
