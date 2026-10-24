@@ -1,6 +1,6 @@
 # LearnPilot API 总览
 
-本文以当前 LearnPilot V1 / M3 最终验收代码为准。
+本文以当前 LearnPilot V1 / M6 代码为准。
 
 - 本地 Base URL：`http://127.0.0.1:8000`
 - Swagger UI：`GET /docs`
@@ -142,6 +142,16 @@ MaterialContent + parser segments
 - provider/阶段执行失败：HTTP `502`，错误码以 `_FAILED` 结尾；
 - 课程、资料或节点不存在/不属于当前 owner：HTTP `404`。
 
+## M6 学习计划与诊断题库接口
+
+| 方法 | 路径 | 作用 | 成功响应 |
+| --- | --- | --- | --- |
+| GET | `/api/courses/{course_id}/learning-plan` | 只读查询当前计划及是否过期；不会自动生成新计划。 | `200`，返回计划可用状态、证据级别、目标、任务及推荐依据。 |
+| POST | `/api/courses/{course_id}/learning-plan/generate` | 基于当前知识和掌握状态生成或复用计划；输入变化时替换旧计划。 | `200`，返回当前计划或明确的不可用状态。 |
+| POST | `/api/diagnostics/courses/{course_id}/questions/prepare` | 为缺少题目覆盖的知识点有界准备诊断题。 | `200`，返回生成及失败统计；新题需审核后才可进入组卷。 |
+
+学习计划分为 `PERSONALIZED`、`PRELIMINARY` 和 `FOUNDATIONAL` 三个证据级别。先修关系是推荐的硬约束；未知掌握度不会换算成零分。资料同步仍使用既有知识构建任务接口，状态响应增加资料同步与新增/复用节点计数。
+
 ## 统一错误格式
 
 可预期错误统一返回：
@@ -181,3 +191,5 @@ MaterialContent + parser segments
 - [M3-A 实施报告](migration/M3A_IMPLEMENTATION_REPORT.md)
 - [M3-E 实施报告](migration/M3E_IMPLEMENTATION_REPORT.md)
 - [M3 最终验收](migration/M3_FINAL_ACCEPTANCE.md)
+- [M6 推荐与学习计划架构](architecture/M6_RECOMMENDATION_ARCHITECTURE.md)
+- [M6 实施与验收报告](migration/M6_IMPLEMENTATION_REPORT.md)

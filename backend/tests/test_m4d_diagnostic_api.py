@@ -204,6 +204,27 @@ def test_create_is_idempotent_for_unfinished_course_assessment(api_client) -> No
     assert second["id"] == first["id"]
 
 
+def test_discard_draft_is_idempotent_and_next_start_is_clean(api_client) -> None:
+    base_url, course_id, _ = api_client
+    assessment = _create_and_start(base_url, course_id)
+    question = assessment["questions"][0]
+    _request(
+        base_url,
+        "PUT",
+        f"/api/diagnostics/assessments/{assessment['id']}/responses/{question['assessment_question_id']}",
+        {"selected_options": [question["options"][0]["key"]]},
+    )
+
+    first_status, first = _request(base_url, "POST", f"/api/diagnostics/assessments/{assessment['id']}/discard")
+    second_status, second = _request(base_url, "POST", f"/api/diagnostics/assessments/{assessment['id']}/discard")
+    assert first_status == second_status == 200
+    assert first == second == {"assessment_id": assessment["id"], "discarded": True}
+
+    recreated = _create_and_start(base_url, course_id)
+    assert recreated["answered_count"] == 0
+    assert all(item["saved_answer"] is None for item in recreated["questions"])
+
+
 def test_save_response_enforces_assessment_question_boundary_and_locks_after_submit(api_client) -> None:
     base_url, course_id, _ = api_client
     first = _create_and_start(base_url, course_id)

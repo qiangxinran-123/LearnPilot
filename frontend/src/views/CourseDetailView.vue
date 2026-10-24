@@ -268,7 +268,7 @@ watch(
                     >
                   </p>
                   <p v-if="material.extraction_status === 'SUCCESS'" class="material-row__tools">
-                    打开资料，可生成摘要、制作学习卡片，并针对内容提问。
+                    打开资料，可制作学习卡片，并针对内容提问。
                   </p>
                 </div>
                 <el-tag

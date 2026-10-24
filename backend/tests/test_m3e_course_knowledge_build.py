@@ -219,6 +219,8 @@ def test_build_reuses_stages_for_each_ready_material_and_returns_typed_payload(d
             "node_count": 2,
             "contains_edge_count": 1,
             "prerequisite_edge_count": 1,
+            "added_node_count": 2,
+            "reused_node_count": 0,
             "reused": True,
         }
         assert extraction.calls == [(seed.course_id, seed.ready_material_id, False)]

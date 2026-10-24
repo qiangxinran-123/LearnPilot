@@ -612,6 +612,67 @@ def test_existing_canonical_node_is_reused_and_receives_candidate_provenance(dat
         assert KnowledgeSourceRepository(session).list_for_node(existing_id)[0].material_id == seed.material_ids[0]
 
 
+def test_incremental_semantic_alias_keeps_the_published_node_identity(database) -> None:
+    factory, settings = database
+    with factory() as session:
+        seed = seed_data(session, settings, [[CandidateSpec("Set Associative Cache")]])
+        first = make_service(session, settings, lambda _settings: None).canonicalize(seed.course_id)
+        original_node_id = first.nodes[0].id
+
+        with session.begin():
+            text = "Set-associative cache organizes lines into indexed sets."
+            material = Material(
+                course_id=seed.course_id,
+                title="Additional Cache Notes",
+                material_type="txt",
+                summary="",
+                extraction_status="SUCCESS",
+                text_extracted=True,
+                text_length=len(text),
+                text_preview=text,
+            )
+            session.add(material)
+            session.flush()
+            content_hash = hashlib.sha256(text.encode()).hexdigest()
+            session.add(
+                MaterialContent(
+                    material_id=material.id,
+                    plain_text=text,
+                    segments=[{"text": text, "source_reference": "TXT segment 1"}],
+                    content_hash=content_hash,
+                    parser_name="test-parser",
+                    parser_version="1",
+                    page_count=1,
+                )
+            )
+            new_candidate_ids = add_current_extraction(
+                session,
+                course_id=seed.course_id,
+                material_id=material.id,
+                content_hash=content_hash,
+                reference="TXT segment 1",
+                candidates=[CandidateSpec("Set-Associative Cache")],
+            )
+
+        candidate_ids = [*seed.candidate_ids, *new_candidate_ids]
+        client = ScriptedCanonicalClient(
+            [
+                {
+                    "groups": [
+                        merge_group(candidate_ids, name="Set-Associative Cache"),
+                    ]
+                }
+            ],
+            session,
+        )
+        updated = make_service(session, settings, client).canonicalize(seed.course_id)
+
+        assert len(updated.nodes) == 1
+        assert updated.nodes[0].id == original_node_id
+        assert updated.nodes[0].normalized_name == "set-associative cache"
+        assert {item.knowledge_node_id for item in updated.resolutions} == {original_node_id}
+
+
 def test_course_api_returns_only_canonical_nodes_and_traceable_detail(database) -> None:
     factory, settings = database
     with factory() as session:

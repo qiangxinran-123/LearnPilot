@@ -18,13 +18,31 @@ from backend.app.models.knowledge import (
     KnowledgeResolutionType,
     normalize_knowledge_name,
 )
+from backend.app.models.learning_plan import (
+    LearningPlanAvailability,
+    LearningPlanLevel,
+    LearningPlanStatus,
+    LearningTaskType,
+)
 from backend.app.models.mastery import ConfidenceLevel, ConfidenceReasonCode, MasteryStatus
+from backend.app.models.recommendation import (
+    CandidateEligibilityStatus,
+    CandidateExclusionReason,
+    DataAvailability,
+    PrerequisiteEvaluationStatus,
+    PrerequisiteEvidenceStatus,
+    RecommendationAvailabilityStatus,
+    RecommendationReasonCode,
+)
 
 __all__ = [
     "AssessmentStatus",
     "AssessmentType",
+    "CandidateEligibilityStatus",
+    "CandidateExclusionReason",
     "ConfidenceLevel",
     "ConfidenceReasonCode",
+    "DataAvailability",
     "EvidenceSourceType",
     "KnowledgeCanonicalizationStatus",
     "KnowledgeDifficulty",
@@ -35,9 +53,17 @@ __all__ = [
     "KnowledgeRelationType",
     "KnowledgeRelationshipStatus",
     "KnowledgeResolutionType",
+    "LearningPlanAvailability",
+    "LearningPlanLevel",
+    "LearningPlanStatus",
+    "LearningTaskType",
     "MasteryStatus",
     "QuestionDifficulty",
     "QuestionType",
     "QuestionValidationStatus",
+    "PrerequisiteEvidenceStatus",
+    "PrerequisiteEvaluationStatus",
+    "RecommendationAvailabilityStatus",
+    "RecommendationReasonCode",
     "normalize_knowledge_name",
 ]

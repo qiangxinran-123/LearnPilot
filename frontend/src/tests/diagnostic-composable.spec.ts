@@ -2,9 +2,10 @@ import { ref } from 'vue';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { useDiagnosticAssessment } from '@/composables/useDiagnosticAssessment';
-import { fetchAssessment, fetchAssessmentResult, saveAssessmentResponse, submitAssessment } from '@/services/diagnostics';
+import { discardAssessment, fetchAssessment, fetchAssessmentResult, saveAssessmentResponse, submitAssessment } from '@/services/diagnostics';
 
 vi.mock('@/services/diagnostics', () => ({
+  discardAssessment: vi.fn(),
   fetchAssessment: vi.fn(),
   fetchAssessmentResult: vi.fn(),
   saveAssessmentResponse: vi.fn(),
@@ -48,6 +49,25 @@ describe('useDiagnosticAssessment', () => {
     expect(diagnostic.confirmedAnsweredCount.value).toBe(1);
   });
 
+  it('continues from the first unanswered question when no local position exists', async () => {
+    const answeredQuestion = assessment.questions[0]!;
+    vi.mocked(fetchAssessment).mockResolvedValue({
+      ...structuredClone(assessment),
+      question_count: 3,
+      answered_count: 1,
+      questions: [
+        answeredQuestion,
+        { ...answeredQuestion, assessment_question_id: 72, order_index: 1, saved_answer: null },
+        { ...answeredQuestion, assessment_question_id: 73, order_index: 2, saved_answer: null },
+      ],
+    });
+    const diagnostic = useDiagnosticAssessment(ref(7));
+    await diagnostic.load();
+
+    expect(diagnostic.currentIndex.value).toBe(1);
+    expect(diagnostic.currentQuestion.value?.assessment_question_id).toBe(72);
+  });
+
   it('serializes saves so an older request cannot overwrite the latest answer', async () => {
     let releaseFirst!: () => void;
     vi.mocked(saveAssessmentResponse)
@@ -75,6 +95,28 @@ describe('useDiagnosticAssessment', () => {
     diagnostic.updateAnswer(71, ['B']);
     expect(await diagnostic.flushPendingSaves()).toBe(false);
     expect(diagnostic.saveStates[71]).toBe('failed');
+  });
+
+  it('discards only through the server and clears the saved position after success', async () => {
+    vi.mocked(discardAssessment).mockResolvedValue({ assessment_id: 7, discarded: true });
+    sessionStorage.setItem('diagnostic:7:question', '0');
+    const diagnostic = useDiagnosticAssessment(ref(7));
+    await diagnostic.load();
+
+    expect(await diagnostic.discardDraft()).toBe(true);
+    expect(discardAssessment).toHaveBeenCalledTimes(1);
+    expect(discardAssessment).toHaveBeenCalledWith(7);
+    expect(sessionStorage.getItem('diagnostic:7:question')).toBeNull();
+  });
+
+  it('keeps the draft position when discard fails', async () => {
+    vi.mocked(discardAssessment).mockRejectedValue(new Error('offline'));
+    sessionStorage.setItem('diagnostic:7:question', '0');
+    const diagnostic = useDiagnosticAssessment(ref(7));
+    await diagnostic.load();
+
+    expect(await diagnostic.discardDraft()).toBe(false);
+    expect(sessionStorage.getItem('diagnostic:7:question')).toBe('0');
   });
 
   it('waits for pending saves before submit and uses the server result', async () => {

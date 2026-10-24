@@ -147,6 +147,8 @@ class KnowledgeModelBuildResponse(BaseModel):
     node_count: int
     contains_edge_count: int
     prerequisite_edge_count: int
+    added_node_count: int
+    reused_node_count: int
     reused: bool
 
 
@@ -173,6 +175,12 @@ class KnowledgeBuildStatusResponse(BaseModel):
     job_id: int | None
     material_count: int
     ready_material_count: int
+    synced_material_count: int
+    pending_sync_material_count: int
+    pending_parse_material_count: int
+    failed_material_count: int
+    last_added_node_count: int
+    last_reused_node_count: int
     node_count: int
     contains_edge_count: int
     prerequisite_edge_count: int

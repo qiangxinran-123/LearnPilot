@@ -278,6 +278,8 @@ def test_build_status_claim_and_content_snapshot_detect_new_material(database) -
         initial = service.get_status(course_id)
         assert initial.state == "ready"
         assert (initial.material_count, initial.ready_material_count, initial.node_count) == (1, 1, 3)
+        assert (initial.synced_material_count, initial.pending_sync_material_count) == (1, 0)
+        assert (initial.pending_parse_material_count, initial.failed_material_count) == (0, 0)
         assert (initial.contains_edge_count, initial.prerequisite_edge_count) == (1, 1)
         first = service.start(course_id)
         repeated = service.start(course_id)
@@ -325,6 +327,7 @@ def test_build_status_claim_and_content_snapshot_detect_new_material(database) -
         assert updated.needs_update is True
         assert updated.node_count == 3
         assert updated.ready_material_count == 2
+        assert (updated.synced_material_count, updated.pending_sync_material_count) == (1, 1)
         assert service.start(course_id).job_id == 2
 
 
@@ -408,7 +411,13 @@ def test_background_job_uses_independent_session_and_persists_success(database, 
                     observed = CourseKnowledgeBuildJobService(status_session, settings).get_status(course_id)
                     assert observed.state == "running"
                     observed_stages.append(observed.stage)
-            return SimpleNamespace(node_count=3, contains_edge_count=1, prerequisite_edge_count=1)
+            return SimpleNamespace(
+                node_count=3,
+                contains_edge_count=1,
+                prerequisite_edge_count=1,
+                added_node_count=1,
+                reused_node_count=2,
+            )
 
     monkeypatch.setattr(job_module, "get_session_factory", lambda: factory)
     monkeypatch.setattr(job_module, "get_course_knowledge_build_service", lambda session, settings: SuccessfulBuild())
@@ -419,6 +428,7 @@ def test_background_job_uses_independent_session_and_persists_success(database, 
         assert status.state == "ready"
         assert status.stage is None
         assert status.needs_update is False
+        assert (status.last_added_node_count, status.last_reused_node_count) == (1, 2)
         assert observed_stages == ["extracting", "canonicalizing", "relationships"]
         repeated = CourseKnowledgeBuildJobService(session, settings).start(course_id)
         assert repeated.reused is True and repeated.should_schedule is False

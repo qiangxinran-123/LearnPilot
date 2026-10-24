@@ -1,6 +1,6 @@
-# LearnPilot / LearnPilot 分阶段开发日志
+# LearnPilot 分阶段开发日志
 
-本日志同时记录当前 LearnPilot V1 里程碑和早期 LearnPilot V0.1 原型演进。当前运行基线已完成 M3-E 与 M3 最终验收；下方 LearnPilot V0.1 阶段表仅用于历史追溯。
+本日志同时记录当前 LearnPilot V1 里程碑和早期 V0.1 原型演进。当前运行基线已完成 M6；下方 V0.1 阶段表仅用于历史追溯。
 
 ## LearnPilot V1 里程碑
 
@@ -15,8 +15,11 @@
 | M3-C | 知识归一化 | 先确定性精确分组，再保守判断语义同一性，生成活动规范节点并传播来源证据。 | 阶段回归 `125/125`，跨资料归一化 smoke 通过。 |
 | M3-D | 知识关系 | 生成并验证 `CONTAINS` 无环森林和 `PREREQUISITE` DAG，保存运行与关系证据。 | SQLite 约束、幂等、失败保留和真实 provider smoke 通过。 |
 | M3-E | 知识结构前端 | 在课程详情中增加懒加载知识结构图、关系筛选、节点/边证据抽屉和课程级构建入口。 | 后端 `139/139`、前端 `31/31`、typecheck/lint/build 与浏览器验收通过。 |
+| M4 | 学习诊断 | 知识点题目生成与审核、组卷、可恢复作答、确定性评分和诊断报告。 | 见 [M4 最终验收](migration/M4_FINAL_ACCEPTANCE_REPORT.md)。 |
+| M5 | 学生知识状态 | 从已提交诊断生成 Learning Evidence，并计算可解释的 Mastery/Confidence。 | 见 [M5 最终验收](migration/M5_FINAL_ACCEPTANCE_REPORT.md)。 |
+| M6 | 推荐与学习计划 | 先修约束推荐、计划持久化与复用、首页/学习页展示；补充课程级诊断题准备和资料同步流程。 | 阶段报告最近一次回归：后端 `359/359`、前端 `143/143`；见 [M6 实施报告](migration/M6_IMPLEMENTATION_REPORT.md) 和 [体验完善](migration/M6_UX_FIX_5_REPORT.md)。 |
 
-M3 完成的是 Course Knowledge Model：资料证据 → 候选 → 规范节点 → 层级/先修关系 → 课程内可视化。它不引入学生掌握度、进度、诊断、推荐或学习路径；Course Model 与未来 Student Model 保持分离。完整边界见 [M3 最终验收](migration/M3_FINAL_ACCEPTANCE.md)。
+M3 完成 Course Knowledge Model，M4/M5 在其上形成诊断证据与学生知识状态，M6 据此生成推荐和学习计划。任务执行、完成证据与 Mastery 刷新仍属于后续阶段。M3 边界见 [M3 最终验收](migration/M3_FINAL_ACCEPTANCE.md)。
 
 ## LearnPilot V0.1 历史原型阶段
 
@@ -49,4 +52,4 @@ wsl -d Ubuntu --cd /home/qxrrr/projects/learnpilot \
 
 ## 版本定位
 
-LearnPilot V0.1 是后端导向的比赛原型，其摘要和卡片使用本地 mock 规则。当前 LearnPilot V1 已迁移到关系数据库、Vue 前端和可配置的模型 provider，并完成 M3 课程知识模型的抽取、归一化、关系生成与可视化；学生模型、掌握度、诊断、推荐和自适应学习仍属于后续里程碑。
+LearnPilot V0.1 是后端导向的比赛原型，其摘要和卡片使用本地 mock 规则。当前 LearnPilot V1 已迁移到关系数据库、Vue 前端和可配置的模型 provider，并完成课程知识模型、诊断、学生知识状态及 M6 推荐与学习计划。学习任务执行、自适应练习和完整进展分析仍属于后续里程碑。

@@ -691,6 +691,9 @@ class KnowledgeCanonicalizationService:
         for node in self.node_repository.list_all_by_course(run.course_id):
             existing_by_name.setdefault(node.normalized_name, []).append(node)
 
+        prior_resolutions = self.resolution_repository.latest_by_candidate_ids(
+            {candidate.id for plan in plans for candidate in plan.candidates}
+        )
         nodes: list[KnowledgeNode] = []
         for plan in plans:
             normalized_name = normalize_knowledge_name(plan.name)
@@ -700,9 +703,49 @@ class KnowledgeCanonicalizationService:
                     "KNOWLEDGE_CANONICALIZATION_FAILED",
                     "Existing course nodes contain an ambiguous normalized-name collision.",
                 )
-            if matches:
+            historical_node_ids = {
+                prior_resolutions[candidate.id].knowledge_node_id
+                for candidate in plan.candidates
+                if candidate.id in prior_resolutions
+            }
+            if len(historical_node_ids) > 1:
+                raise KnowledgeCanonicalizationError(
+                    "KNOWLEDGE_CANONICALIZATION_INVALID_OUTPUT",
+                    "Incremental canonicalization cannot automatically merge distinct published knowledge nodes.",
+                )
+            historical_node = (
+                self.node_repository.get_by_id(next(iter(historical_node_ids))) if historical_node_ids else None
+            )
+            if historical_node is not None and historical_node.course_id != run.course_id:
+                raise KnowledgeCanonicalizationError(
+                    "KNOWLEDGE_CANONICALIZATION_FAILED",
+                    "A previous candidate resolution points outside the current course.",
+                )
+            if historical_node is not None and matches and matches[0].id != historical_node.id:
+                raise KnowledgeCanonicalizationError(
+                    "KNOWLEDGE_CANONICALIZATION_INVALID_OUTPUT",
+                    "Incremental canonicalization would collide with another published knowledge node.",
+                )
+
+            if historical_node is not None:
+                node = historical_node
+                old_normalized_name = node.normalized_name
+                node.name = plan.name
+                node.normalized_name = normalized_name
+                node.description = plan.description
+                node.importance = plan.importance
+                node.difficulty = plan.difficulty
+                node.is_active = True
+                self.node_repository.update(node)
+                if old_normalized_name != normalized_name:
+                    existing_by_name[old_normalized_name] = [
+                        item for item in existing_by_name.get(old_normalized_name, []) if item.id != node.id
+                    ]
+                    existing_by_name[normalized_name] = [node]
+            elif matches:
                 node = matches[0]
                 node.name = plan.name
+                node.normalized_name = normalized_name
                 node.description = plan.description
                 node.importance = plan.importance
                 node.difficulty = plan.difficulty

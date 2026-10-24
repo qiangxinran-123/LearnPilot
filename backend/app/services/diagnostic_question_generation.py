@@ -98,6 +98,7 @@ class DiagnosticQuestionGenerationService:
         question_type: object,
         difficulty: object,
         count: int,
+        initial_status: QuestionValidationStatus = QuestionValidationStatus.VALIDATED,
     ) -> GeneratedQuestionBatch:
         started = time.monotonic()
         try:
@@ -132,7 +133,15 @@ class DiagnosticQuestionGenerationService:
                 )
                 output = DiagnosticQuestionGenerationOutput.model_validate(generated.data)
                 contents = self._validate_candidates(request, ready, output.questions)
-                result = self._persist(owner_id, request, ready, contents, generated.provider, generated.model)
+                result = self._persist(
+                    owner_id,
+                    request,
+                    ready,
+                    contents,
+                    generated.provider,
+                    generated.model,
+                    initial_status,
+                )
                 logger.info(
                     "diagnostic_question_generation operation=generate course_id=%s knowledge_node_id=%s "
                     "question_type=%s difficulty=%s requested_count=%s accepted_count=%s rejected_count=0 "
@@ -246,7 +255,7 @@ class DiagnosticQuestionGenerationService:
                 raise DiagnosticQuestionGenerationError(
                     "KNOWLEDGE_MODEL_NOT_READY", "The course knowledge model is not ready for question generation."
                 )
-            sources = self._verified_sources(node.id, request.course_id)
+            sources = self.verified_sources_for_node(node.id, request.course_id)
             if not sources:
                 raise DiagnosticQuestionGenerationError(
                     "QUESTION_SOURCE_INSUFFICIENT", "The knowledge node has no verified parsed source context."
@@ -272,7 +281,7 @@ class DiagnosticQuestionGenerationService:
                 primary_node_stems,
             )
 
-    def _verified_sources(self, node_id: int, course_id: int) -> list[VerifiedSourceContext]:
+    def verified_sources_for_node(self, node_id: int, course_id: int) -> list[VerifiedSourceContext]:
         statement = (
             select(KnowledgeSource, Material, MaterialContent)
             .join(Material, Material.id == KnowledgeSource.material_id)
@@ -407,6 +416,7 @@ class DiagnosticQuestionGenerationService:
         contents: list[QuestionContentSchema],
         provider: str,
         model: str,
+        initial_status: QuestionValidationStatus,
     ) -> list[Question]:
         generated_at = datetime.now(timezone.utc).isoformat()
         saved: list[Question] = []
@@ -424,7 +434,7 @@ class DiagnosticQuestionGenerationService:
                 raise DiagnosticQuestionGenerationError(
                     "QUESTION_ALIGNMENT_INVALID", "Target knowledge node changed before persistence."
                 )
-            current_sources = self._verified_sources(ready.node_id, request.course_id)
+            current_sources = self.verified_sources_for_node(ready.node_id, request.course_id)
             current_by_key = {
                 (source.material_id, source.source_reference): source.excerpt for source in current_sources
             }
@@ -446,7 +456,7 @@ class DiagnosticQuestionGenerationService:
                         correct_answer=list(content.correct_answer),
                         explanation=content.explanation,
                         difficulty=content.difficulty,
-                        validation_status=QuestionValidationStatus.VALIDATED,
+                        validation_status=initial_status,
                         source_refs=[reference.model_dump(mode="json") for reference in content.source_refs],
                         generation_metadata={
                             "provider": provider,
@@ -454,7 +464,11 @@ class DiagnosticQuestionGenerationService:
                             "prompt_version": question_prompt.PROMPT_VERSION,
                             "generated_at": generated_at,
                             "target_knowledge_node_id": ready.node_id,
-                            "validation": "automated",
+                            "validation": (
+                                "automated"
+                                if initial_status == QuestionValidationStatus.VALIDATED
+                                else "pending_review"
+                            ),
                             "context_chars": len(ready.rendered_context),
                             "source_count": len(ready.sources),
                         },

@@ -1,14 +1,70 @@
 import { httpClient } from '@/services/http';
 import type {
   Assessment,
+  AssessmentDiscardResponse,
   AssessmentListResponse,
+  CourseQuestionPreparationResponse,
+  DiagnosticQuestionGenerationResponse,
   DiagnosticReadiness,
   DiagnosticResult,
+  QuestionBankListResponse,
+  QuestionBankReadiness,
+  QuestionReviewResponse,
+  QuestionValidationStatus,
   SavedResponse,
 } from '@/types/diagnostic';
 
 export function fetchDiagnosticReadiness(courseId: number): Promise<DiagnosticReadiness> {
   return httpClient.get<DiagnosticReadiness>(`/diagnostics/courses/${courseId}/readiness`);
+}
+
+export function fetchQuestionBankReadiness(courseId: number): Promise<QuestionBankReadiness> {
+  return httpClient.get<QuestionBankReadiness>(`/diagnostics/courses/${courseId}/question-bank`);
+}
+
+export function fetchDiagnosticQuestions(
+  courseId: number,
+  status?: QuestionValidationStatus,
+): Promise<QuestionBankListResponse> {
+  return httpClient.get<QuestionBankListResponse>(`/diagnostics/courses/${courseId}/questions`, {
+    params: status ? { status } : undefined,
+  });
+}
+
+export function generateDiagnosticQuestion(
+  courseId: number,
+  knowledgeNodeId: number,
+): Promise<DiagnosticQuestionGenerationResponse> {
+  return httpClient.post<DiagnosticQuestionGenerationResponse>(
+    `/diagnostics/courses/${courseId}/questions/generate`,
+    { knowledge_node_id: knowledgeNodeId, count: 1 },
+  );
+}
+
+export function prepareCourseDiagnosticQuestions(
+  courseId: number,
+): Promise<CourseQuestionPreparationResponse> {
+  return httpClient.post<CourseQuestionPreparationResponse>(
+    `/diagnostics/courses/${courseId}/questions/prepare`,
+  );
+}
+
+export function approveDiagnosticQuestion(
+  courseId: number,
+  questionId: number,
+): Promise<QuestionReviewResponse> {
+  return httpClient.post<QuestionReviewResponse>(
+    `/diagnostics/courses/${courseId}/questions/${questionId}/approve`,
+  );
+}
+
+export function rejectDiagnosticQuestion(
+  courseId: number,
+  questionId: number,
+): Promise<QuestionReviewResponse> {
+  return httpClient.post<QuestionReviewResponse>(
+    `/diagnostics/courses/${courseId}/questions/${questionId}/reject`,
+  );
 }
 
 export function createOrResumeAssessment(courseId: number): Promise<Assessment> {
@@ -35,6 +91,12 @@ export function saveAssessmentResponse(
   return httpClient.put<SavedResponse>(
     `/diagnostics/assessments/${assessmentId}/responses/${assessmentQuestionId}`,
     { schema_version: 'objective_answer_v1', selected_options: selectedOptions },
+  );
+}
+
+export function discardAssessment(assessmentId: number): Promise<AssessmentDiscardResponse> {
+  return httpClient.post<AssessmentDiscardResponse>(
+    `/diagnostics/assessments/${assessmentId}/discard`,
   );
 }
 

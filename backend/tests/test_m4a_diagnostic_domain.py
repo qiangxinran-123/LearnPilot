@@ -17,10 +17,12 @@ from backend.app.db.models import (
     AssessmentQuestion,
     Course,
     KnowledgeNode,
+    LearningEvidence,
     Material,
     Question,
     QuestionKnowledgeNode,
     Response,
+    StudentKnowledgeState,
     User,
 )
 from backend.app.models import (
@@ -333,6 +335,56 @@ def test_repeated_submission_is_idempotent_only_for_identical_answers(database) 
                 {snapshot_id: ObjectiveAnswerSchema(selected_options=["A"])},
             )
         assert changed.value.code == "ASSESSMENT_ALREADY_SUBMITTED"
+
+
+def test_discard_unfinished_assessment_is_idempotent_and_has_no_learning_side_effects(database) -> None:
+    factory, seed = database
+    with factory() as session:
+        service, _questions, assessment, snapshots = prepare_assessment(session, seed)
+        assessment_id = assessment.id
+        service.save_draft_response(
+            seed.owner_id,
+            assessment_id,
+            snapshots[0].id,
+            ObjectiveAnswerSchema(selected_options=["A"]),
+        )
+        assert session.scalar(select(Response).where(Response.assessment_id == assessment_id)) is not None
+        session.rollback()
+
+        service.discard_assessment(seed.owner_id, assessment_id)
+        service.discard_assessment(seed.owner_id, assessment_id)
+
+        assert session.get(Assessment, assessment_id) is None
+        assert session.scalar(select(Response).where(Response.assessment_id == assessment_id)) is None
+        assert list(session.scalars(select(LearningEvidence))) == []
+        assert list(session.scalars(select(StudentKnowledgeState))) == []
+
+
+def test_discard_does_not_cross_owner_boundary(database) -> None:
+    factory, seed = database
+    with factory() as session:
+        _service, _questions, assessment, _snapshots = prepare_assessment(session, seed)
+        assessment_id = assessment.id
+
+    with factory() as session:
+        DiagnosticDomainService(session).discard_assessment(seed.other_owner_id, assessment_id)
+
+    with factory() as session:
+        assert session.get(Assessment, assessment_id) is not None
+
+
+def test_submitted_assessment_cannot_be_discarded(database) -> None:
+    factory, seed = database
+    with factory() as session:
+        service, _questions, assessment, _snapshots = prepare_assessment(session, seed)
+        assessment_id = assessment.id
+        service.submit_assessment(seed.owner_id, assessment_id)
+
+        with pytest.raises(DiagnosticDomainError) as invalid:
+            service.discard_assessment(seed.owner_id, assessment_id)
+
+        assert invalid.value.code == "ASSESSMENT_INVALID_TRANSITION"
+        assert session.get(Assessment, assessment_id) is not None
 
 
 def test_historical_snapshot_survives_question_update_node_rebuild_and_source_delete(database) -> None:

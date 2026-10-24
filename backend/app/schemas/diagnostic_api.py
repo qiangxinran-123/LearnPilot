@@ -25,6 +25,11 @@ class SavedResponseSchema(BaseModel):
     answered_at: datetime
 
 
+class DiagnosticAssessmentDiscardSchema(BaseModel):
+    assessment_id: int = Field(gt=0)
+    discarded: Literal[True] = True
+
+
 class DiagnosticCandidateQuestionSchema(BaseModel):
     assessment_question_id: int = Field(gt=0)
     order_index: int = Field(ge=0)
@@ -130,6 +135,7 @@ class DiagnosticQuestionReviewSchema(BaseModel):
 __all__ = [
     "AssessmentReadinessSchema",
     "DiagnosticAssessmentCreateSchema",
+    "DiagnosticAssessmentDiscardSchema",
     "DiagnosticAssessmentDetailSchema",
     "DiagnosticAssessmentListSchema",
     "DiagnosticAssessmentSummarySchema",

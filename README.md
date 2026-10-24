@@ -2,11 +2,12 @@
 
 LearnPilot 是面向大学理工科课程的 AI 学习诊断与个性化学习系统。
 
-当前代码基线为 **LearnPilot V1 / M5 Final Acceptance**。旧版 LearnPilot V0.x 的 JSON 原型、原生前端和比赛材料仍保留用于追溯，但不再代表当前运行架构。核心链路为：
+当前代码基线为 **LearnPilot V1 / M6 Final Acceptance**。旧版 LearnPilot V0.x 的 JSON 原型、原生前端和比赛材料仍保留用于追溯，但不再代表当前运行架构。核心链路为：
 
 ```text
 课程资料 → 知识建模 → AI 题库 → 学习诊断 → 确定性评分
   → Learning Evidence → Mastery/Confidence → 个性化知识地图
+  → 推荐排序 → 学习计划与任务展示
 ```
 
 ## 当前能力
@@ -21,8 +22,10 @@ LearnPilot 是面向大学理工科课程的 AI 学习诊断与个性化学习�
 - M3-E 将课程详情升级为学习工作台：默认学习概览、完整资料工具、知识层级树与辅助关系图、独立知识详情，以及可恢复的知识构建/更新状态。
 - M4 支持基于知识节点的诊断题生成、题目质量与来源验证、自动组卷、单选/判断/多选、自动保存与恢复、确定性评分、历史诊断、知识点级报告及错题解析。
 - M5 支持 Learning Evidence、历史诊断证据幂等导入、Mastery Score、Confidence、学生知识状态、可解释证据、课程结构/掌握状态地图切换、来源原文片段预览和资料 AI 学习工具入口提示。
+- M6 根据掌握状态、知识重要度及先修关系生成可解释推荐；保存并复用课程学习计划，在首页和学习页展示目标与 1–3 项学习任务。证据不足时明确区分个性化、初步和基础计划，不把未知掌握度当作零分。
+- M6 体验完善包括课程级诊断题准备与人工审核入口、未完成诊断恢复，以及新增资料后的显式知识同步和题目缺口补充。
 
-M3 建立课程知识模型，M4/M5 在其上提供诊断与学生知识状态能力。Mastery 是基于有效 Learning Evidence 的确定性掌握度估计，不是单次诊断正确率，也不是经过教育测量学标定的真实掌握概率。M6 及后续能力尚未实现，图坐标等展示状态仍不会写入领域数据。
+M3 建立课程知识模型，M4/M5 在其上提供诊断与学生知识状态能力，M6 使用这些数据生成推荐与学习计划。Mastery 是基于有效 Learning Evidence 的确定性掌握度估计，不是单次诊断正确率，也不是经过教育测量学标定的真实掌握概率。学习任务的执行与完成记录属于后续阶段，图坐标等展示状态仍不会写入领域数据。
 
 ## 技术栈
 
@@ -96,7 +99,9 @@ LLM_MODEL=...
 9. `0009_m4e_diagnostic_report_policy`：诊断报告策略与历史结果约束；
 10. `0010_m5a_learning_evidence_foundation`：Learning Evidence 基础模型、来源身份与幂等约束；
 11. `0011_m5b_evidence_current_node_mapping`：历史知识节点当前映射状态；
-12. `0012_m5c_student_knowledge_state`：学生知识状态、Mastery/Confidence 结果与算法版本。
+12. `0012_m5c_student_knowledge_state`：学生知识状态、Mastery/Confidence 结果与算法版本；
+13. `0013_m6_learning_plans`：课程学习计划与有序任务；
+14. `0014_m6_ux_fix4_sync_counts`：知识同步新增/复用节点计数。
 
 旧 `backend/app/data/courses.json` 不会在启动时自动导入。先执行 dry-run，再决定是否写入目标数据库：
 
@@ -139,6 +144,9 @@ LLM_MODEL=...
 - `GET /api/courses/{course_id}/mastery`
 - `GET /api/courses/{course_id}/knowledge/{node_id}/mastery`
 - `GET /api/courses/{course_id}/knowledge/{node_id}/evidence`
+- `GET /api/courses/{course_id}/learning-plan`
+- `POST /api/courses/{course_id}/learning-plan/generate`
+- `POST /api/diagnostics/courses/{course_id}/questions/prepare`
 
 请求参数、响应边界和错误码见 [API 总览](docs/API_OVERVIEW.md)。
 
@@ -170,6 +178,12 @@ M4 的诊断题固定知识节点和历史题目快照，提交后使用已保�
 
 课程知识地图可在课程结构与我的掌握状态之间切换。状态、证据数量、算法版本和证据解释均来自已持久化的 M5 数据；没有足够证据的节点保持待评估，不显示虚构的 0% 或 50%。
 
+## M6 推荐与学习计划
+
+推荐引擎使用 M5 掌握状态、课程知识结构和先修关系确定学习目标，并给出理由、优先级和受阻先修项。课程学习计划保存目标及 1–3 项有序任务；相同输入会复用现有计划，知识或掌握状态变化时旧计划会显示过期，显式重新生成后才会替换。首页和学习页读取同一份计划。
+
+计划区分个性化、初步与基础三个证据级别。没有诊断证据时，基础计划只依据真实课程知识结构选择先修起点；证据不足时不会伪造掌握度或学习进度。诊断页可显式补充待审核题目，并在新增资料后同步知识模型与题目缺口。
+
 ## 质量检查
 
 后端：
@@ -190,14 +204,14 @@ npm run test
 npm run build
 ```
 
-M5 最终验收测试快照（并非对未来版本的持续保证）：后端 `299/299`、前端 `106/106` 测试通过；TypeScript、ESLint、生产构建、Ruff 和 Alembic 均通过，真实 Chromium 浏览器验收通过，ARCH-01/02/03 均保留。构建中的懒加载 vendor chunk 体积提示仍是非阻塞事项。
+M6 阶段报告记录的最近一次回归快照：后端 `359/359`、前端 `143/143` 测试通过，Ruff、TypeScript、ESLint 和生产构建通过。该快照来自已保存的实施报告，本次文档与推送操作未重新运行测试。构建中的懒加载 vendor chunk 体积提示仍是非阻塞事项。
 
 ## 项目结构
 
 ```text
 learnpilot/
 ├── backend/
-│   ├── alembic/                 # 0001 → … → 0012 数据库迁移
+│   ├── alembic/                 # 0001 → … → 0014 数据库迁移
 │   ├── app/
 │   │   ├── ai/                  # provider/mock 适配与审计边界
 │   │   ├── api/                 # 课程、资料、知识模型接口
@@ -241,6 +255,9 @@ learnpilot/
 - [M5 Knowledge Map 集成](docs/architecture/M5E_KNOWLEDGE_MAP_INTEGRATION.md)
 - [M5 FIX-1/FIX-2 报告](docs/migration/M5E_FIX1_FIX2_REPORT.md)
 - [M5 最终验收报告](docs/migration/M5_FINAL_ACCEPTANCE_REPORT.md)
+- [M6 推荐与学习计划架构](docs/architecture/M6_RECOMMENDATION_ARCHITECTURE.md)
+- [M6 实施与验收报告](docs/migration/M6_IMPLEMENTATION_REPORT.md)
+- [M6 体验完善报告](docs/migration/M6_UX_FIX_5_REPORT.md)
 - [旧版比赛 Demo 脚本](docs/DEMO_SCRIPT.md)
 - [旧版 V0.1 验收清单](docs/V0.1_ACCEPTANCE.md)
 
@@ -252,7 +269,7 @@ learnpilot/
 - M3 的 provider 判断是受边界和来源校验约束的建议，不代表完整课程真理。
 - 知识图是辅助探索界面，不支持图编辑、坐标持久化、导出或完整键盘图遍历；层级树和知识列表提供主要的可访问浏览路径。
 - Mastery 是可解释的启发式掌握度估计，尚未进行教育测量学标定；没有已提交诊断或有效 Evidence 的课程会保持待评估状态。
-- M6 Recommendation Engine / Dynamic Learning Path 尚未实现。
+- M6 学习任务目前只展示计划，不记录执行或完成；任务时长是模板估计值。
 - M7 AI Tutor、Learning Session 和 Adaptive Practice 尚未实现。
 - M8 Progress Analytics 尚未实现。
 - 当前未启用 PPTX/OCR；MySQL 8 目标部署也尚未完成正式验收。

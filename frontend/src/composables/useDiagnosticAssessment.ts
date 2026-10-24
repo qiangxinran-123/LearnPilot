@@ -1,6 +1,7 @@
 import { computed, reactive, ref, type Ref } from 'vue';
 
 import {
+  discardAssessment,
   fetchAssessment,
   fetchAssessmentResult,
   saveAssessmentResponse,
@@ -20,6 +21,7 @@ export function useDiagnosticAssessment(assessmentId: Ref<number>) {
   const state = ref<'loading' | 'ready' | 'error'>('loading');
   const errorMessage = ref('');
   const isSubmitting = ref(false);
+  const isDiscarding = ref(false);
   const editingLocked = ref(false);
   const currentIndex = ref(0);
   const answers = reactive<Record<number, string[]>>({});
@@ -41,6 +43,9 @@ export function useDiagnosticAssessment(assessmentId: Ref<number>) {
   const isReadOnly = computed(
     () => editingLocked.value || assessment.value?.status === 'submitted',
   );
+  const hasPendingDraftChanges = computed(() =>
+    Object.values(saveStates).some((item) => item === 'unsaved' || item === 'saving' || item === 'failed'),
+  );
 
   function restore(response: Assessment): void {
     assessment.value = response;
@@ -50,10 +55,14 @@ export function useDiagnosticAssessment(assessmentId: Ref<number>) {
       confirmedAnswers[question.assessment_question_id] = saved;
       saveStates[question.assessment_question_id] = saved.length ? 'saved' : 'idle';
     }
-    const stored = Number(sessionStorage.getItem(`diagnostic:${response.id}:question`));
+    const storedValue = sessionStorage.getItem(`diagnostic:${response.id}:question`);
+    const stored = storedValue === null ? Number.NaN : Number(storedValue);
+    const firstUnanswered = response.questions.findIndex((item) => !(item.saved_answer?.length));
     currentIndex.value = Number.isInteger(stored)
       ? Math.min(Math.max(stored, 0), Math.max(response.question_count - 1, 0))
-      : 0;
+      : firstUnanswered >= 0
+        ? firstUnanswered
+        : Math.max(response.question_count - 1, 0);
   }
 
   async function load(): Promise<void> {
@@ -122,6 +131,30 @@ export function useDiagnosticAssessment(assessmentId: Ref<number>) {
     return !Object.values(saveStates).some((item) => item === 'failed' || item === 'unsaved');
   }
 
+  async function saveDraftForExit(): Promise<boolean> {
+    errorMessage.value = '';
+    if (await flushPendingSaves()) return true;
+    errorMessage.value = '保存失败，请重试。当前作答尚未确认保存。';
+    return false;
+  }
+
+  async function discardDraft(): Promise<boolean> {
+    if (!assessment.value || assessment.value.status === 'submitted') return false;
+    isDiscarding.value = true;
+    errorMessage.value = '';
+    try {
+      await flushPendingSaves();
+      await discardAssessment(assessment.value.id);
+      sessionStorage.removeItem(`diagnostic:${assessment.value.id}:question`);
+      return true;
+    } catch (error: unknown) {
+      errorMessage.value = normalizeApiError(error).message || '未能放弃本次作答，请重试。';
+      return false;
+    } finally {
+      isDiscarding.value = false;
+    }
+  }
+
   async function submit(): Promise<boolean> {
     if (!assessment.value || assessment.value.status === 'submitted') return true;
     editingLocked.value = true;
@@ -161,6 +194,7 @@ export function useDiagnosticAssessment(assessmentId: Ref<number>) {
     state,
     errorMessage,
     isSubmitting,
+    isDiscarding,
     answers,
     confirmedAnswers,
     saveStates,
@@ -170,11 +204,14 @@ export function useDiagnosticAssessment(assessmentId: Ref<number>) {
     confirmedAnsweredCount,
     unansweredCount,
     isReadOnly,
+    hasPendingDraftChanges,
     load,
     goTo,
     updateAnswer,
     retrySave,
     flushPendingSaves,
+    saveDraftForExit,
+    discardDraft,
     submit,
   };
 }

@@ -6,9 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   askMaterialQuestion,
   fetchMaterialCards,
-  fetchMaterialSummary,
   generateMaterialCards,
-  generateMaterialSummary,
 } from '@/services/ai-materials';
 import { ApiError } from '@/services/http';
 import { deleteMaterial, fetchMaterial, fetchMaterialContent } from '@/services/materials';
@@ -16,7 +14,6 @@ import type {
   CardGenerationResponse,
   Material,
   MaterialContentResponse,
-  MaterialSummaryResponse,
 } from '@/types/course';
 import MaterialDetailView from '@/views/MaterialDetailView.vue';
 
@@ -26,18 +23,14 @@ vi.mock('@/services/materials', () => ({
   deleteMaterial: vi.fn(),
 }));
 vi.mock('@/services/ai-materials', () => ({
-  fetchMaterialSummary: vi.fn(),
   fetchMaterialCards: vi.fn(),
-  generateMaterialSummary: vi.fn(),
   generateMaterialCards: vi.fn(),
   askMaterialQuestion: vi.fn(),
 }));
 
 const fetchDetail = vi.mocked(fetchMaterial);
 const fetchContent = vi.mocked(fetchMaterialContent);
-const fetchSummary = vi.mocked(fetchMaterialSummary);
 const fetchCards = vi.mocked(fetchMaterialCards);
-const generateSummary = vi.mocked(generateMaterialSummary);
 const generateCards = vi.mocked(generateMaterialCards);
 const askQuestion = vi.mocked(askMaterialQuestion);
 const removeMaterial = vi.mocked(deleteMaterial);
@@ -68,15 +61,6 @@ const content: MaterialContentResponse = {
   page_count: 1,
   parser_name: 'pymupdf',
   parser_version: '1',
-};
-const noSummary: MaterialSummaryResponse = {
-  id: 4,
-  material_id: 4,
-  summary: null,
-  ai_summary: null,
-  summary_generated: false,
-  summary_method: null,
-  summary_updated_at: null,
 };
 const noCards: CardGenerationResponse = {
   material_id: 4,
@@ -119,7 +103,6 @@ async function mountDetail() {
 function ready() {
   fetchDetail.mockResolvedValue(material);
   fetchContent.mockResolvedValue(content);
-  fetchSummary.mockResolvedValue(noSummary);
   fetchCards.mockResolvedValue(noCards);
 }
 
@@ -129,40 +112,24 @@ describe('MaterialDetailView', () => {
     ready();
   });
 
-  it('loads persisted content and empty summary/card states', async () => {
+  it('loads persisted content and card state without any summary UI or request', async () => {
     const { wrapper } = await mountDetail();
     await flushPromises();
 
     expect(fetchDetail).toHaveBeenCalledWith(4);
     expect(fetchContent).toHaveBeenCalledWith(4);
-    expect(fetchSummary).toHaveBeenCalledWith(4);
     expect(fetchCards).toHaveBeenCalledWith(4);
     expect(wrapper.text()).toContain('缓存讲义');
     expect(wrapper.text()).toContain('缓存是高速存储器。');
-    expect(wrapper.text()).toContain('尚未生成摘要');
     expect(wrapper.text()).toContain('尚未生成学习卡片');
-    expect(wrapper.text()).toContain('将资料整理为核心概览、重要概念和复习要点。');
     expect(wrapper.text()).toContain('从资料中生成便于回顾的问答卡片。');
     expect(wrapper.text()).toContain('围绕当前资料提问，并查看回答依据。');
+    expect(wrapper.text()).not.toContain('生成摘要');
+    expect(wrapper.text()).not.toContain('核心概览');
+    expect(wrapper.text()).not.toContain('刷新摘要状态');
   });
 
-  it('shows saved summary and cards without regenerating on page load', async () => {
-    fetchSummary.mockResolvedValue({
-      ...noSummary,
-      summary_generated: true,
-      summary: {
-        overview: '缓存缩短访问时间。',
-        key_concepts: ['局部性'],
-        important_points: ['热点数据可复用'],
-        common_mistakes: [],
-        review_suggestions: ['比较缓存与主存'],
-        provider: 'mock',
-        model: 'deterministic-m2',
-        prompt_version: 'summary_v1',
-        generated_at: '2026-09-20T08:00:00Z',
-        updated_at: '2026-09-20T08:00:00Z',
-      },
-    });
+  it('shows saved cards without regenerating on page load', async () => {
     fetchCards.mockResolvedValue({
       ...noCards,
       count: 1,
@@ -185,35 +152,29 @@ describe('MaterialDetailView', () => {
     const { wrapper } = await mountDetail();
     await flushPromises();
 
-    expect(wrapper.text()).toContain('缓存缩短访问时间。');
-    expect(wrapper.text()).toContain('局部性');
-    expect(wrapper.text()).toContain('生成来源：mock / deterministic-m2 · summary_v1');
     expect(wrapper.text()).toContain('缓存有什么用途？');
     expect(wrapper.text()).not.toContain('缩短数据访问时间。');
-    await wrapper.get('.study-card').trigger('click');
+    const card = wrapper.get('.study-card');
+    expect(card.element.tagName).toBe('BUTTON');
+    expect(card.attributes('aria-expanded')).toBe('false');
+    expect(card.text()).toContain('点击卡片查看答案');
+    expect(card.text()).toContain('查看答案');
+
+    const cardButton = card.element as HTMLButtonElement;
+    cardButton.focus();
+    cardButton.click();
+    await wrapper.vm.$nextTick();
+    expect(card.attributes('aria-expanded')).toBe('true');
     expect(wrapper.text()).toContain('缩短数据访问时间。');
+    expect(card.text()).toContain('点击返回问题');
+    expect(card.text()).toContain('返回问题');
     expect(wrapper.text()).toContain('来源：第 1 页');
-    expect(generateSummary).not.toHaveBeenCalled();
+
+    cardButton.click();
+    await wrapper.vm.$nextTick();
+    expect(card.attributes('aria-expanded')).toBe('false');
+    expect(wrapper.text()).not.toContain('缩短数据访问时间。');
     expect(generateCards).not.toHaveBeenCalled();
-  });
-
-  it('keeps the summary empty state visible when AI generation fails', async () => {
-    generateSummary.mockRejectedValue(
-      new ApiError('请先配置大模型。', { code: 'AI_NOT_CONFIGURED' }),
-    );
-    const { wrapper } = await mountDetail();
-    await flushPromises();
-
-    const button = wrapper
-      .findAll('button')
-      .find((candidate) => candidate.text().includes('生成摘要'));
-    expect(button).toBeDefined();
-    await button?.trigger('click');
-    await flushPromises();
-
-    expect(generateSummary).toHaveBeenCalledWith(4);
-    expect(wrapper.get('.ai-error').text()).toBe('请先配置大模型。');
-    expect(wrapper.text()).toContain('尚未生成摘要');
   });
 
   it('renders a material-grounded answer with its returned reference', async () => {
@@ -252,9 +213,7 @@ describe('MaterialDetailView', () => {
     expect(wrapper.text()).toContain('资料解析失败');
     expect(wrapper.text()).toContain('请确认文件完整后重新上传。');
     expect(fetchContent).not.toHaveBeenCalled();
-    expect(fetchSummary).toHaveBeenCalledWith(4);
     expect(fetchCards).toHaveBeenCalledWith(4);
-    expect(generateSummary).not.toHaveBeenCalled();
     expect(generateCards).not.toHaveBeenCalled();
     expect(askQuestion).not.toHaveBeenCalled();
   });

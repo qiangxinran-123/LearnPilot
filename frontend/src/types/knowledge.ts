@@ -87,6 +87,8 @@ export interface KnowledgeModelBuildResponse {
   node_count: number;
   contains_edge_count: number;
   prerequisite_edge_count: number;
+  added_node_count: number;
+  reused_node_count: number;
   reused: boolean;
 }
 
@@ -109,6 +111,12 @@ export interface KnowledgeBuildStatus {
   job_id: number | null;
   material_count: number;
   ready_material_count: number;
+  synced_material_count: number;
+  pending_sync_material_count: number;
+  pending_parse_material_count: number;
+  failed_material_count: number;
+  last_added_node_count: number;
+  last_reused_node_count: number;
   node_count: number;
   contains_edge_count: number;
   prerequisite_edge_count: number;

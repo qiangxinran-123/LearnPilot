@@ -1,17 +1,5 @@
 import { httpClient } from '@/services/http';
-import type {
-  CardGenerationResponse,
-  MaterialQAResponse,
-  MaterialSummaryResponse,
-} from '@/types/course';
-
-export function fetchMaterialSummary(materialId: number): Promise<MaterialSummaryResponse> {
-  return httpClient.get<MaterialSummaryResponse>(`/materials/${materialId}/summary`);
-}
-
-export function generateMaterialSummary(materialId: number): Promise<MaterialSummaryResponse> {
-  return httpClient.post<MaterialSummaryResponse>(`/materials/${materialId}/summary`, {});
-}
+import type { CardGenerationResponse, MaterialQAResponse } from '@/types/course';
 
 export function fetchMaterialCards(materialId: number): Promise<CardGenerationResponse> {
   return httpClient.get<CardGenerationResponse>(`/materials/${materialId}/cards`);

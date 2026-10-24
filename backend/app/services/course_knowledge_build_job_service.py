@@ -61,6 +61,12 @@ class CourseKnowledgeBuildStatus:
     job_id: int | None
     material_count: int
     ready_material_count: int
+    synced_material_count: int
+    pending_sync_material_count: int
+    pending_parse_material_count: int
+    failed_material_count: int
+    last_added_node_count: int
+    last_reused_node_count: int
     node_count: int
     contains_edge_count: int
     prerequisite_edge_count: int
@@ -119,6 +125,24 @@ class CourseKnowledgeBuildJobService:
                 self._recover_expired(state)
             materials = self.materials.list_for_course(course_id)
             ready, current_snapshot = _material_snapshot(materials, self.contents)
+            extracted_material_ids = {
+                run.material_id
+                for run in KnowledgeExtractionRunRepository(self.session).list_current_for_course(course_id)
+            }
+            ready_material_ids = {material.id for material in ready}
+            failed_material_count = sum(
+                material.extraction_status
+                in {
+                    "EMPTY_CONTENT",
+                    "DECODE_ERROR",
+                    "UNSUPPORTED_FORMAT",
+                    "PARSE_FAILED",
+                    "LEGACY_CONTENT_PARTIAL",
+                    "LEGACY_CONTENT_UNAVAILABLE",
+                }
+                or material.extraction_error_code is not None
+                for material in materials
+            )
             canonical_ids = self._canonical_node_ids(course_id)
             active_ids = {node.id for node in self.nodes.list_by_course(course_id)}
             canonical_ids &= active_ids
@@ -139,10 +163,6 @@ class CourseKnowledgeBuildJobService:
                 # M3-D courses predate the durable build snapshot. A current
                 # extraction tied to the stored content hash is verifiable
                 # evidence that a parsed material participated in the model.
-                extracted_material_ids = {
-                    run.material_id
-                    for run in KnowledgeExtractionRunRepository(self.session).list_current_for_course(course_id)
-                }
                 needs_update = any(material.id not in extracted_material_ids for material in ready)
             if state is not None and state.status == "running":
                 display_state = "running"
@@ -163,6 +183,12 @@ class CourseKnowledgeBuildJobService:
                 job_id=state.job_id if state is not None and state.job_id > 0 else None,
                 material_count=len(materials),
                 ready_material_count=len(ready),
+                synced_material_count=len(ready_material_ids & extracted_material_ids),
+                pending_sync_material_count=len(ready_material_ids - extracted_material_ids),
+                pending_parse_material_count=len(materials) - len(ready) - failed_material_count,
+                failed_material_count=failed_material_count,
+                last_added_node_count=state.last_added_node_count if state is not None else 0,
+                last_reused_node_count=state.last_reused_node_count if state is not None else 0,
                 node_count=len(canonical_ids),
                 contains_edge_count=sum(edge.relation_type.value == "contains" for edge in edges),
                 prerequisite_edge_count=sum(edge.relation_type.value == "prerequisite" for edge in edges),
@@ -341,6 +367,8 @@ def run_course_knowledge_build_job(course_id: int, job_id: int, settings: Settin
         state.stage = "complete"
         state.error_code = None
         state.error_message = None
+        state.last_added_node_count = result.added_node_count
+        state.last_reused_node_count = result.reused_node_count
         state.success_material_snapshot_hash = state.requested_material_snapshot_hash
         state.last_success_at = _utc_now()
         state.completed_at = state.last_success_at

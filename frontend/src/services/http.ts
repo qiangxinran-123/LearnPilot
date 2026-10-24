@@ -46,7 +46,7 @@ export function normalizeApiError(error: unknown): ApiError {
     }
 
     if (error.code === 'ECONNABORTED') {
-      return new ApiError('请求超时，请稍后重试。');
+      return new ApiError('请求超时，请稍后重试。', { code: 'REQUEST_TIMEOUT' });
     }
 
     if (!response) {

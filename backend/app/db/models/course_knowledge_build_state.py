@@ -23,6 +23,8 @@ class CourseKnowledgeBuildState(Base):
     error_message: Mapped[str | None] = mapped_column(String(255), nullable=True)
     requested_material_snapshot_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     success_material_snapshot_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    last_added_node_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    last_reused_node_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     checkpoint_json: Mapped[str | None] = mapped_column(Text().with_variant(LONGTEXT(), "mysql"), nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

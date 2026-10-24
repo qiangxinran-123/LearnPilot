@@ -656,14 +656,13 @@ onBeforeUnmount(() => {
           <section class="knowledge-page__card">
             <p class="knowledge-page__section-number">04 / 继续学习</p>
             <h2 id="knowledge-next-heading">从课程资料继续</h2>
-            <p class="knowledge-page__muted">摘要、学习卡片和问答均针对你选择的单份资料。</p>
+            <p class="knowledge-page__muted">学习卡片和问答均针对你选择的单份资料。</p>
             <ul v-if="learningMaterials.length" class="knowledge-page__learning-list">
               <li v-for="material in learningMaterials" :key="material.id">
                 <h3>{{ material.title }}</h3>
                 <p>{{ materialType(material) }}</p>
                 <div class="knowledge-page__learning-actions">
                   <RouterLink :to="materialRoute(material.id, 'content')">查看资料</RouterLink>
-                  <RouterLink :to="materialRoute(material.id, 'summary')">资料摘要</RouterLink>
                   <RouterLink :to="materialRoute(material.id, 'cards')">学习卡片</RouterLink>
                   <RouterLink :to="materialRoute(material.id, 'qa')">单资料问答</RouterLink>
                 </div>

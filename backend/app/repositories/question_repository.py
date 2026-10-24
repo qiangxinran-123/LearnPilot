@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session, selectinload
 
 from backend.app.db.models import Course, Question, QuestionKnowledgeNode
@@ -38,13 +38,21 @@ class QuestionRepository:
         )
         return self.session.scalar(statement)
 
-    def list_for_course_owner(self, course_id: int, owner_id: int) -> list[Question]:
+    def list_for_course_owner(
+        self,
+        course_id: int,
+        owner_id: int,
+        status: QuestionValidationStatus | None = None,
+    ) -> list[Question]:
         statement = (
             select(Question)
             .join(Course, Course.id == Question.course_id)
             .where(Question.course_id == course_id, Course.owner_id == owner_id)
+            .options(selectinload(Question.knowledge_links).selectinload(QuestionKnowledgeNode.knowledge_node))
             .order_by(Question.id)
         )
+        if status is not None:
+            statement = statement.where(Question.validation_status == status)
         return list(self.session.scalars(statement))
 
     def list_for_primary_node(self, course_id: int, knowledge_node_id: int) -> list[Question]:
@@ -75,3 +83,23 @@ class QuestionRepository:
     def delete(self, question: Question) -> None:
         self.session.delete(question)
         self.session.flush()
+
+    def transition_status(
+        self,
+        *,
+        question_id: int,
+        course_id: int,
+        expected: QuestionValidationStatus,
+        target: QuestionValidationStatus,
+    ) -> bool:
+        result = self.session.execute(
+            update(Question)
+            .where(
+                Question.id == question_id,
+                Question.course_id == course_id,
+                Question.validation_status == expected,
+            )
+            .values(validation_status=target)
+        )
+        self.session.flush()
+        return result.rowcount == 1

@@ -16,6 +16,7 @@ from backend.app.schemas.assessment_scoring import AssessmentReadinessSchema
 from backend.app.schemas.diagnostic import ObjectiveAnswerSchema
 from backend.app.schemas.diagnostic_api import (
     DiagnosticAssessmentDetailSchema,
+    DiagnosticAssessmentDiscardSchema,
     DiagnosticAssessmentListSchema,
     DiagnosticAssessmentSummarySchema,
     DiagnosticCandidateQuestionSchema,
@@ -88,6 +89,10 @@ class DiagnosticExperienceService:
             selected_options=list(response.answer_payload.get("selected_options", [])),
             answered_at=response.answered_at,
         )
+
+    def discard(self, assessment_id: int) -> DiagnosticAssessmentDiscardSchema:
+        DiagnosticDomainService(self.session).discard_assessment(self._owner_id(), assessment_id)
+        return DiagnosticAssessmentDiscardSchema(assessment_id=assessment_id)
 
     def submit(self, assessment_id: int) -> DiagnosticResultSchema:
         owner_id = self._owner_id()

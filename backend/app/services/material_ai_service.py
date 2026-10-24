@@ -214,7 +214,7 @@ class MaterialAIService:
                 operation="ai_summary", messages=summary_prompt.messages(ready.plain_text), schema=SummaryOutput
             )
 
-        pieces = [f"[{chunk.source_reference}]\n{chunk.text}" for chunk in self._chunks_for(ready)]
+        pieces = self._summary_source_pieces(ready)
         partials: list[GeneratedStructuredOutput] = []
         for group in self._summary_groups(pieces):
             source = "\n\n".join(pieces[index] for index in group)
@@ -244,6 +244,16 @@ class MaterialAIService:
                 next_partials.append(result)
             partials = next_partials
         return partials[0]
+
+    def _summary_source_pieces(self, ready: ReadyMaterial) -> list[str]:
+        prefix = "[资料内容]\n"
+        max_chars = self.settings.llm_context_chars - len(prefix)
+        chunks = chunk_segments(
+            [{"text": ready.plain_text, "source_reference": "资料内容"}],
+            max_chars=max_chars,
+            overlap_chars=min(self.settings.llm_chunk_overlap_chars, max_chars - 1),
+        )
+        return [f"[{chunk.source_reference}]\n{chunk.text}" for chunk in chunks]
 
     def _summary_groups(self, pieces: list[str]) -> list[list[int]]:
         groups: list[list[int]] = []

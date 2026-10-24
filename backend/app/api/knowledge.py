@@ -148,6 +148,8 @@ def knowledge_model_build_payload(result: CourseKnowledgeBuildResult) -> dict[st
         "node_count": result.node_count,
         "contains_edge_count": result.contains_edge_count,
         "prerequisite_edge_count": result.prerequisite_edge_count,
+        "added_node_count": result.added_node_count,
+        "reused_node_count": result.reused_node_count,
         "reused": result.reused,
     }
 

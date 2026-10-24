@@ -12,6 +12,7 @@ from backend.app.repositories.knowledge_node_repository import KnowledgeNodeRepo
 from backend.app.repositories.knowledge_relationship_run_repository import KnowledgeRelationshipRunRepository
 from backend.app.repositories.knowledge_source_repository import KnowledgeSourceRepository
 from backend.app.repositories.learning_evidence_repository import LearningEvidenceRepository
+from backend.app.repositories.learning_plan_repository import LearningPlanRepository
 from backend.app.repositories.material_content_repository import MaterialContentRepository
 from backend.app.repositories.material_repository import MaterialRepository
 from backend.app.repositories.material_summary_repository import MaterialSummaryRepository
@@ -36,6 +37,7 @@ __all__ = [
     "KnowledgeRelationshipRunRepository",
     "KnowledgeSourceRepository",
     "LearningEvidenceRepository",
+    "LearningPlanRepository",
     "MaterialContentRepository",
     "MaterialRepository",
     "MaterialSummaryRepository",

@@ -201,6 +201,28 @@ class DiagnosticDomainService:
                 raise
             raise DiagnosticDomainError("RESPONSE_LOCKED", str(error)) from error
 
+    def discard_assessment(self, owner_id: int, assessment_id: int) -> None:
+        """Discard an unfinished assessment and its draft responses atomically.
+
+        Missing assessments are treated as already discarded so repeated client
+        requests are safe. Submitted assessments are immutable and can never be
+        discarded through this draft-only operation.
+        """
+        with self.session.begin():
+            assessment = self.assessments.get_for_owner(assessment_id, owner_id)
+            if assessment is None:
+                return
+            if assessment.status not in {
+                AssessmentStatus.DRAFT,
+                AssessmentStatus.READY,
+                AssessmentStatus.IN_PROGRESS,
+            }:
+                raise DiagnosticDomainError(
+                    "ASSESSMENT_INVALID_TRANSITION",
+                    "Only an unfinished assessment can be discarded.",
+                )
+            self.assessments.delete(assessment)
+
     def submit_assessment(
         self,
         owner_id: int,

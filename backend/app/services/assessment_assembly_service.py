@@ -57,6 +57,12 @@ class AssembledAssessment:
     metadata: AssemblyMetadataSchema
 
 
+@dataclass(frozen=True)
+class QuestionBankAssemblyPreview:
+    readiness: AssessmentReadinessSchema
+    required_nodes: tuple[KnowledgeNode, ...]
+
+
 class AssessmentAssemblyService:
     MIN_QUESTIONS = 8
     MAX_QUESTIONS = 20
@@ -137,13 +143,17 @@ class AssessmentAssemblyService:
 
     def preview_readiness(self, owner_id: int, course_id: int) -> AssessmentReadinessSchema:
         """Return an assembly preview without creating or mutating an assessment."""
+        return self.preview_question_bank(owner_id, course_id).readiness
+
+    def preview_question_bank(self, owner_id: int, course_id: int) -> QuestionBankAssemblyPreview:
+        """Return readiness plus required core nodes using the assembly policy."""
         with self.session.begin():
             course = self.session.scalar(select(Course).where(Course.id == course_id, Course.owner_id == owner_id))
             if course is None:
                 raise AssessmentAssemblyError("COURSE_NOT_FOUND", "Course not found.")
             core_nodes = self._core_nodes(course_id)
             if not core_nodes:
-                return AssessmentReadinessSchema(
+                readiness = AssessmentReadinessSchema(
                     course_id=course_id,
                     status="knowledge_not_ready",
                     can_start=False,
@@ -153,12 +163,13 @@ class AssessmentAssemblyService:
                     message="No active course knowledge structure is available.",
                     reason_code="KNOWLEDGE_MODEL_NOT_READY",
                 )
+                return QuestionBankAssemblyPreview(readiness, ())
             eligible = self._eligible_questions(course_id, {node.id for node in core_nodes})
             target = self._target_question_count(len(core_nodes), len(eligible))
             covered_ids = {item.primary_node.id for item in eligible}
             required_ids = {node.id for node in core_nodes[: min(len(core_nodes), target)]}
             can_start = target >= self.MIN_QUESTIONS and required_ids.issubset(covered_ids)
-            return AssessmentReadinessSchema(
+            readiness = AssessmentReadinessSchema(
                 course_id=course_id,
                 status="ready" if can_start else "question_bank_insufficient",
                 can_start=can_start,
@@ -175,6 +186,8 @@ class AssessmentAssemblyService:
                 ),
                 reason_code=None if can_start else "QUESTION_BANK_INSUFFICIENT",
             )
+            required_count = min(len(core_nodes), max(self.MIN_QUESTIONS, target))
+            return QuestionBankAssemblyPreview(readiness, tuple(core_nodes[:required_count]))
 
     def candidate_questions(self, owner_id: int, assessment_id: int) -> list[CandidateAssessmentQuestionSchema]:
         with self.session.begin():

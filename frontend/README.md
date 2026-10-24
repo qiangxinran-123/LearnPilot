@@ -2,9 +2,11 @@
 
 LearnPilot uses Vue 3, TypeScript, Vite, Vue Router, Pinia, Element Plus, and Axios. The application shell provides the five learner-journey pages: 首页、课程、诊断、学习、进展.
 
-M2 connects the Course workspace to the backend: course creation/edit/deletion, material upload/detail/deletion, persisted parsed content, structured summary, study cards, and current-material Q&A. The other product areas retain truthful empty states; no mastery or progress figures are fabricated.
+M2 connects the Course workspace to the backend: course creation/edit/deletion, material upload/detail/deletion, persisted parsed content, study cards, and current-material Q&A. The Summary API remains available for compatibility, but the standalone Summary UI has been retired.
 
-M3-E adds a lazy `课程知识结构` tab to Course Detail. It reads the persisted M3 course model, renders real `CONTAINS` and `PREREQUISITE` relationships, exposes node source provenance and edge evidence, and can invoke the thin course-level build endpoint. It does not create learner mastery/progress data or persist graph layout state.
+M3-E adds a course learning workspace with overview, materials, a hierarchy-first knowledge structure and an auxiliary graph. It reads the persisted M3 model and exposes node sources and relationship evidence without persisting graph layout state.
+
+M6 shows the persisted course learning plan on Dashboard and Learn, including recommendation reasons, prerequisite context, evidence level, and one to three ordered tasks. The Diagnose workspace supports bounded question-bank preparation, human review, interrupted-assessment recovery, and explicit synchronization after new materials. Task execution and completion are not recorded in this stage.
 
 ## Runtime
 
@@ -59,7 +61,7 @@ The graph uses only persisted backend entities:
 - edge drawers distinguish model rationale from validated material evidence;
 - pan, zoom, fit, reset and local relation filters do not write coordinates back to the API.
 
-The build/update button calls `POST /api/courses/{course_id}/knowledge-model/build`. It is available only when the course has usable parsed material and relies on the backend's M3-B through M3-D idempotency and failure-preservation behavior.
+The build/update button calls `POST /api/courses/{course_id}/knowledge-model/build-jobs`. It is available only when the course has usable parsed material and relies on the backend's M3-B through M3-D idempotency and failure-preservation behavior.
 
 ## Quality checks
 
@@ -74,7 +76,7 @@ npm run build
 
 ## Verification
 
-Typecheck, lint, production build, and the full Vitest suite (`31/31`) passed. The M2 material workflow remains covered, and the M3-E tests cover deterministic graph adaptation, multiple roots, disconnected concepts, malformed-edge exclusion, local filters, build/reload behavior, failure preservation, source provenance and relation-direction drawers.
+The latest saved M6 regression report records typecheck, lint, production build, and the full Vitest suite (`143/143`) passing. This release operation does not rerun those checks. The M6 view tests cover learning-plan levels, course switching, stale responses, diagnosis states and question-bank actions.
 
 A real-provider browser E2E used two self-authored TXT materials and the course-level build flow. It produced a persisted model with 12 nodes, 3 `CONTAINS` edges and 13 `PREREQUISITE` edges, then verified node sources, edge evidence, filtering, pan/zoom/fit/reset and responsive behavior at 1440/1280/1024 px. No credential, provider endpoint or complete user material is recorded in the repository.
 

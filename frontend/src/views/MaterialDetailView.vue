@@ -7,7 +7,6 @@ import {
   Delete,
   Document,
   DocumentCopy,
-  Reading,
 } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
 
@@ -17,9 +16,7 @@ import LoadingBlock from '@/components/feedback/LoadingBlock.vue';
 import {
   askMaterialQuestion,
   fetchMaterialCards,
-  fetchMaterialSummary,
   generateMaterialCards,
-  generateMaterialSummary,
 } from '@/services/ai-materials';
 import { ApiError, normalizeApiError } from '@/services/http';
 import { deleteMaterial, fetchMaterial, fetchMaterialContent } from '@/services/materials';
@@ -28,7 +25,6 @@ import type {
   Material,
   MaterialContentResponse,
   MaterialQAResponse,
-  MaterialSummaryResponse,
 } from '@/types/course';
 
 const route = useRoute();
@@ -37,21 +33,19 @@ const courseId = computed(() => Number(route.params.courseId));
 const materialId = computed(() => Number(route.params.materialId));
 const material = ref<Material | null>(null);
 const content = ref<MaterialContentResponse | null>(null);
-const summary = ref<MaterialSummaryResponse | null>(null);
 const cards = ref<CardGenerationResponse | null>(null);
 const qaAnswer = ref<MaterialQAResponse | null>(null);
 const state = ref<'loading' | 'ready' | 'error'>('loading');
 const errorMessage = ref('');
-const summaryLoading = ref(false);
 const cardsLoading = ref(false);
 const qaLoading = ref(false);
 const qaQuestion = ref('');
 const aiError = ref('');
 const expandedCardId = ref<number | null>(null);
-const activeTab = computed<'content' | 'summary' | 'cards' | 'qa'>({
+const activeTab = computed<'content' | 'cards' | 'qa'>({
   get() {
     const tab = route.query.tab;
-    return tab === 'summary' || tab === 'cards' || tab === 'qa' ? tab : 'content';
+    return tab === 'cards' || tab === 'qa' ? tab : 'content';
   },
   set(tab) {
     void router.replace({ query: { ...route.query, tab } });
@@ -116,7 +110,6 @@ async function loadMaterial(): Promise<void> {
   aiError.value = '';
   material.value = null;
   content.value = null;
-  summary.value = null;
   cards.value = null;
   qaAnswer.value = null;
   try {
@@ -124,11 +117,10 @@ async function loadMaterial(): Promise<void> {
     if (request !== materialRequest) return;
     if (loadedMaterial.course_id !== requestedCourseId)
       throw new ApiError('资料不属于当前课程。', { status: 404 });
-    const [contentResponse, summaryResponse, cardsResponse] = await Promise.all([
+    const [contentResponse, cardsResponse] = await Promise.all([
       loadedMaterial.extraction_status === 'SUCCESS'
         ? fetchMaterialContent(requestedMaterialId)
         : Promise.resolve(null),
-      fetchMaterialSummary(requestedMaterialId),
       fetchMaterialCards(requestedMaterialId),
     ]);
     if (
@@ -139,25 +131,12 @@ async function loadMaterial(): Promise<void> {
       return;
     material.value = loadedMaterial;
     content.value = contentResponse;
-    summary.value = summaryResponse;
     cards.value = cardsResponse;
     state.value = 'ready';
   } catch (error: unknown) {
     if (request !== materialRequest) return;
     state.value = 'error';
     errorMessage.value = normalizeApiError(error).message;
-  }
-}
-async function generateSummary(): Promise<void> {
-  if (parseFailed.value) return;
-  summaryLoading.value = true;
-  aiError.value = '';
-  try {
-    summary.value = await generateMaterialSummary(materialId.value);
-  } catch (error: unknown) {
-    aiError.value = normalizeApiError(error).message;
-  } finally {
-    summaryLoading.value = false;
   }
 }
 async function generateCards(): Promise<void> {
@@ -242,7 +221,7 @@ watch(
         </div>
         <el-popconfirm
           width="280"
-          title="删除资料会同时删除解析内容、摘要、学习卡片和本地文件，此操作无法撤销。"
+          title="删除资料会同时删除解析内容、学习卡片、关联 AI 结果和本地文件，此操作无法撤销。"
           confirm-button-text="确认删除"
           cancel-button-text="取消"
           @confirm="removeMaterial"
@@ -276,55 +255,6 @@ watch(
           </section>
           <p v-else class="content-panel__note">完整文本暂不可用，请重新上传原文件。</p>
         </el-tab-pane>
-        <el-tab-pane label="摘要" name="summary">
-          <section class="ai-tool-panel">
-            <div v-if="summary?.summary" class="summary-layout">
-              <article class="summary-overview">
-                <h2>核心概览</h2>
-                <p>{{ summary.summary.overview }}</p>
-              </article>
-              <article
-                v-for="section in [
-                  { title: '关键概念', items: summary.summary.key_concepts },
-                  { title: '重要内容', items: summary.summary.important_points },
-                  { title: '易错点', items: summary.summary.common_mistakes },
-                  { title: '复习建议', items: summary.summary.review_suggestions },
-                ]"
-                :key="section.title"
-                class="summary-section"
-              >
-                <h3>{{ section.title }}</h3>
-                <ul v-if="section.items.length">
-                  <li v-for="item in section.items" :key="item">{{ item }}</li>
-                </ul>
-                <p v-else>当前没有可展示的内容。</p>
-              </article>
-              <p class="ai-provenance">
-                生成来源：{{ summary.summary.provider }} / {{ summary.summary.model }} ·
-                {{ summary.summary.prompt_version }}
-              </p>
-              <el-button
-                v-if="!parseFailed"
-                :loading="summaryLoading"
-                plain
-                @click="generateSummary"
-                >重新生成摘要</el-button
-              >
-            </div>
-            <EmptyState
-              v-else
-              :icon="Reading"
-              title="尚未生成摘要"
-              description="将资料整理为核心概览、重要概念和复习要点。"
-            >
-              <template v-if="!parseFailed" #action
-                ><el-button type="primary" :loading="summaryLoading" @click="generateSummary"
-                  >生成摘要</el-button
-                ></template
-              >
-            </EmptyState>
-          </section>
-        </el-tab-pane>
         <el-tab-pane label="学习卡片" name="cards">
           <section class="ai-tool-panel">
             <div v-if="cards?.cards.length" class="study-card-list">
@@ -334,6 +264,7 @@ watch(
                 class="study-card"
                 type="button"
                 :aria-expanded="expandedCardId === card.id"
+                :aria-label="`${card.question}，${expandedCardId === card.id ? '返回问题' : '查看答案'}`"
                 @click="toggleCard(card.id)"
               >
                 <span class="study-card__label">问题 {{ card.order_index }}</span
@@ -341,6 +272,12 @@ watch(
                 <p v-if="expandedCardId === card.id">{{ card.answer }}</p>
                 <small v-if="card.knowledge_hint">{{ card.knowledge_hint }}</small
                 ><small v-if="card.source_reference">来源：{{ card.source_reference }}</small>
+                <span class="study-card__interaction" aria-hidden="true">
+                  <span>{{ expandedCardId === card.id ? '点击返回问题' : '点击卡片查看答案' }}</span>
+                  <span class="study-card__action">{{
+                    expandedCardId === card.id ? '返回问题' : '查看答案'
+                  }}</span>
+                </span>
               </button>
               <el-button v-if="!parseFailed" :loading="cardsLoading" plain @click="generateCards"
                 >重新生成学习卡片</el-button

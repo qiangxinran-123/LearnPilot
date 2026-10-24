@@ -97,6 +97,7 @@ async function mountCourse() {
         CourseFormDialog: true,
         MaterialUploadDialog: true,
         CourseOverview: true,
+        QuestionBankPanel: true,
       },
     },
   });
@@ -118,7 +119,7 @@ describe('CourseDetailView material AI discoverability', () => {
   it('advertises the existing learning tools only for successfully parsed materials', async () => {
     const { wrapper } = await mountCourse();
 
-    expect(wrapper.text()).toContain('打开资料，可生成摘要、制作学习卡片，并针对内容提问。');
+    expect(wrapper.text()).toContain('打开资料，可制作学习卡片，并针对内容提问。');
     expect(wrapper.findAll('.material-row__tools')).toHaveLength(1);
     expect(wrapper.text()).toContain('等待解析');
     expect(wrapper.text()).toContain('解析失败');

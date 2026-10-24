@@ -13,6 +13,8 @@ from backend.app.db.models.knowledge_node import KnowledgeNode
 from backend.app.db.models.knowledge_relationship_run import KnowledgeRelationshipRun
 from backend.app.db.models.knowledge_source import KnowledgeSource
 from backend.app.db.models.learning_evidence import LearningEvidence
+from backend.app.db.models.learning_plan import LearningPlan
+from backend.app.db.models.learning_task import LearningTask
 from backend.app.db.models.material import Material
 from backend.app.db.models.material_content import MaterialContent
 from backend.app.db.models.material_summary import MaterialSummary
@@ -39,6 +41,8 @@ __all__ = [
     "KnowledgeRelationshipRun",
     "KnowledgeSource",
     "LearningEvidence",
+    "LearningPlan",
+    "LearningTask",
     "Material",
     "MaterialContent",
     "MaterialSummary",

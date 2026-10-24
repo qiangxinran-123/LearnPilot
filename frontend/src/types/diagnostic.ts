@@ -1,6 +1,86 @@
 export type AssessmentStatus = 'draft' | 'ready' | 'in_progress' | 'submitted';
 export type DiagnosticQuestionType = 'single_choice' | 'true_false' | 'multiple_choice';
 export type QuestionDifficulty = 'easy' | 'medium' | 'hard';
+export type QuestionValidationStatus = 'pending' | 'validated' | 'rejected';
+
+export interface QuestionBankNode {
+  knowledge_node_id: number;
+  knowledge_node_name: string;
+  has_validated_question: boolean;
+  has_pending_question: boolean;
+}
+
+export interface QuestionBankReadiness {
+  course_id: number;
+  validated_count: number;
+  pending_count: number;
+  rejected_count: number;
+  covered_core_nodes: number;
+  total_core_nodes: number;
+  minimum_required: number;
+  required_questions: number;
+  can_start: boolean;
+  reason_code: string | null;
+  required_nodes: QuestionBankNode[];
+}
+
+export interface QuestionBankSourceReference {
+  material_id: number | null;
+  material_title: string | null;
+  source_reference: string;
+  excerpt: string | null;
+}
+
+export interface QuestionBankItem {
+  question_id: number;
+  course_id: number;
+  knowledge_node_id: number | null;
+  knowledge_node_name: string | null;
+  question_type: DiagnosticQuestionType;
+  difficulty: QuestionDifficulty;
+  stem: string;
+  options: QuestionOption[];
+  correct_answer: string[];
+  explanation: string;
+  source_refs: QuestionBankSourceReference[];
+  validation_status: QuestionValidationStatus;
+  created_at: string;
+}
+
+export interface QuestionBankListResponse {
+  count: number;
+  questions: QuestionBankItem[];
+}
+
+export interface DiagnosticQuestionGenerationResponse {
+  provider: string;
+  model: string;
+  prompt_version: string;
+  requested_count: number;
+  accepted_count: number;
+  questions: QuestionBankItem[];
+}
+
+export interface CourseQuestionPreparationFailure {
+  knowledge_node_id: number;
+  knowledge_node_name: string;
+  code: string;
+  message: string;
+}
+
+export interface CourseQuestionPreparationResponse {
+  course_id: number;
+  planned_count: number;
+  generated_count: number;
+  failed_count: number;
+  pending_review_count: number;
+  questions: QuestionBankItem[];
+  failures: CourseQuestionPreparationFailure[];
+}
+
+export interface QuestionReviewResponse {
+  question: QuestionBankItem;
+}
 
 export interface DiagnosticReadiness {
   course_id: number;
@@ -48,6 +128,11 @@ export interface SavedResponse {
   assessment_question_id: number;
   selected_options: string[];
   answered_at: string;
+}
+
+export interface AssessmentDiscardResponse {
+  assessment_id: number;
+  discarded: true;
 }
 
 export interface AssessmentSummary {

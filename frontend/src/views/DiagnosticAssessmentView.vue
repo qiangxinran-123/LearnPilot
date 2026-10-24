@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router';
 import { ArrowLeft, Check, Warning } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
 
@@ -12,6 +12,10 @@ const route = useRoute();
 const router = useRouter();
 const assessmentId = computed(() => Number(route.params.assessmentId));
 const submitDialogOpen = ref(false);
+const exitDialogOpen = ref(false);
+const isExiting = ref(false);
+const pendingDestination = ref('/diagnose');
+let allowNavigation = false;
 const diagnostic = useDiagnosticAssessment(assessmentId);
 const progressPercentage = computed(() => {
   const total = diagnostic.assessment.value?.question_count ?? 0;
@@ -46,12 +50,66 @@ async function confirmSubmit(): Promise<void> {
   if (succeeded) { submitDialogOpen.value = false; ElMessage.success('诊断已提交。'); }
   else if (diagnostic.errorMessage.value) ElMessage.error(diagnostic.errorMessage.value);
 }
+
+function requestExit(destination = '/diagnose'): void {
+  if (!diagnostic.assessment.value || diagnostic.assessment.value.status === 'submitted') {
+    void router.push(destination);
+    return;
+  }
+  pendingDestination.value = destination;
+  exitDialogOpen.value = true;
+}
+function continueAnswering(): void {
+  exitDialogOpen.value = false;
+}
+function completeExit(): void {
+  allowNavigation = true;
+  exitDialogOpen.value = false;
+  void router.push(pendingDestination.value);
+}
+async function saveAndExit(): Promise<void> {
+  if (isExiting.value) return;
+  isExiting.value = true;
+  const succeeded = await diagnostic.saveDraftForExit();
+  isExiting.value = false;
+  if (succeeded) completeExit();
+  else ElMessage.error('保存失败，请重试。当前作答尚未确认保存。');
+}
+async function discardAndExit(): Promise<void> {
+  if (isExiting.value) return;
+  isExiting.value = true;
+  const succeeded = await diagnostic.discardDraft();
+  isExiting.value = false;
+  if (succeeded) completeExit();
+  else ElMessage.error('未能放弃本次作答，请重试。');
+}
+function handleBeforeUnload(event: BeforeUnloadEvent): void {
+  if (
+    diagnostic.assessment.value?.status === 'in_progress'
+    && diagnostic.hasPendingDraftChanges.value
+  ) {
+    event.preventDefault();
+    event.returnValue = '';
+  }
+}
+onBeforeRouteLeave((to) => {
+  if (
+    allowNavigation
+    || diagnostic.assessment.value?.status !== 'in_progress'
+    || diagnostic.result.value
+  ) return true;
+  pendingDestination.value = to.fullPath;
+  exitDialogOpen.value = true;
+  return false;
+});
+onMounted(() => window.addEventListener('beforeunload', handleBeforeUnload));
+onBeforeUnmount(() => window.removeEventListener('beforeunload', handleBeforeUnload));
 void diagnostic.load();
 </script>
 
 <template>
   <section class="page-view assessment-page">
-    <button class="back-link" type="button" @click="router.push('/diagnose')"><el-icon><ArrowLeft /></el-icon>返回诊断</button>
+    <button class="back-link" type="button" @click="requestExit()"><el-icon><ArrowLeft /></el-icon>退出诊断</button>
     <LoadingBlock v-if="diagnostic.state.value === 'loading'" :count="2" />
     <ErrorState v-else-if="diagnostic.state.value === 'error'" title="诊断加载失败" :message="diagnostic.errorMessage.value" @retry="diagnostic.load" />
     <template v-else-if="diagnostic.assessment.value">
@@ -109,17 +167,37 @@ void diagnostic.load();
       <p>系统会先等待所有答案完成保存，再由后端确定性评分。</p>
       <template #footer><el-button :disabled="diagnostic.isSubmitting.value" @click="submitDialogOpen = false">返回检查</el-button><el-button type="primary" :loading="diagnostic.isSubmitting.value" @click="confirmSubmit">确认提交</el-button></template>
     </el-dialog>
+
+    <el-dialog
+      v-model="exitDialogOpen"
+      title="确定退出本次诊断？"
+      width="min(92vw, 500px)"
+      :close-on-click-modal="!isExiting"
+      :close-on-press-escape="!isExiting"
+      :show-close="!isExiting"
+    >
+      <p class="exit-description">你可以保存当前作答进度，下次继续完成；也可以放弃本次尚未提交的答案。</p>
+      <template #footer>
+        <div class="exit-actions">
+          <el-button :disabled="isExiting" @click="continueAnswering">继续答题</el-button>
+          <el-button type="danger" plain :disabled="isExiting" @click="discardAndExit">放弃本次作答</el-button>
+          <el-button type="primary" :loading="isExiting" @click="saveAndExit">保存并退出</el-button>
+        </div>
+      </template>
+    </el-dialog>
   </section>
 </template>
 
 <style scoped>
 .back-link { display: inline-flex; align-items: center; gap: 7px; margin-bottom: 20px; padding: 0; border: 0; color: var(--lp-text-secondary); background: transparent; cursor: pointer; }
 .eyebrow { margin: 0 0 5px; color: var(--lp-primary); font-size: 11px; font-weight: 750; letter-spacing: .14em; }
-.assessment-header { display: flex; align-items: end; justify-content: space-between; gap: 24px; margin-bottom: 24px; }
-.assessment-header h1 { margin: 0; color: var(--lp-ink); font-size: 25px; }
+.assessment-page { min-width: 0; max-width: 100%; }
+.assessment-header { display: flex; min-width: 0; align-items: end; justify-content: space-between; gap: 24px; margin-bottom: 24px; }
+.assessment-header > div { min-width: 0; }
+.assessment-header h1 { margin: 0; color: var(--lp-ink); font-size: 25px; overflow-wrap: anywhere; }
 .assessment-progress { width: min(360px, 40vw); color: var(--lp-text-secondary); font-size: 12px; }
 .assessment-progress span { display: block; margin-bottom: 7px; text-align: right; }
-.assessment-layout { display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 20px; }
+.assessment-layout { display: grid; min-width: 0; max-width: 100%; grid-template-columns: 210px minmax(0, 1fr); gap: 20px; }
 .question-navigator, .question-card { border: 1px solid var(--lp-border); border-radius: var(--lp-radius-lg); background: var(--lp-surface); box-shadow: var(--lp-shadow-sm); }
 .question-navigator { align-self: start; padding: 18px; }
 .navigator-title { display: flex; align-items: baseline; justify-content: space-between; }
@@ -134,19 +212,20 @@ void diagnostic.load();
 .navigator-legend span { display: flex; align-items: center; gap: 5px; }
 .navigator-legend i { width: 8px; height: 8px; border: 1px solid var(--lp-border); border-radius: 2px; }
 .navigator-legend i.answered { border-color: #bcd5f4; background: var(--lp-primary-soft); }
-.question-card { min-height: 520px; padding: clamp(24px, 4vw, 46px); }
-.question-meta { display: flex; align-items: center; gap: 10px; color: var(--lp-text-secondary); font-size: 12px; }
+.question-card { min-width: 0; max-width: 100%; min-height: 520px; padding: clamp(24px, 4vw, 46px); box-sizing: border-box; }
+.question-meta { display: flex; min-width: 0; flex-wrap: wrap; align-items: center; gap: 10px; color: var(--lp-text-secondary); font-size: 12px; }
 .type-badge { padding: 3px 8px; border-radius: 999px; color: var(--lp-primary); background: var(--lp-primary-soft); }
 .save-indicator { margin-left: auto; }
 .save-indicator--saved { color: #287548; }
 .save-indicator--failed, .save-indicator--unsaved { color: var(--lp-danger); }
-.question-card h2 { margin: 24px 0 28px; color: var(--lp-ink); font-size: clamp(20px, 2vw, 25px); font-weight: 620; line-height: 1.55; }
-.answer-options { display: grid; gap: 12px; }
-.answer-options :deep(.el-radio), .answer-options :deep(.el-checkbox) { width: 100%; min-height: 54px; height: auto; margin: 0; padding: 13px 16px; white-space: normal; }
-.answer-options :deep(.el-radio__label), .answer-options :deep(.el-checkbox__label) { line-height: 1.55; }
+.question-card h2 { min-width: 0; max-width: 100%; margin: 24px 0 28px; color: var(--lp-ink); font-size: clamp(20px, 2vw, 25px); font-weight: 620; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+.answer-options { display: grid; min-width: 0; max-width: 100%; gap: 12px; }
+.answer-options :deep(.el-radio), .answer-options :deep(.el-checkbox) { width: 100%; min-width: 0; max-width: 100%; min-height: 54px; height: auto; margin: 0; padding: 13px 16px; align-items: flex-start; box-sizing: border-box; white-space: normal; }
+.answer-options :deep(.el-radio__input), .answer-options :deep(.el-checkbox__input) { flex: 0 0 auto; margin-top: 3px; }
+.answer-options :deep(.el-radio__label), .answer-options :deep(.el-checkbox__label) { min-width: 0; max-width: 100%; padding-right: 0; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
 .option-key { display: inline-grid; width: 24px; height: 24px; margin-right: 9px; place-items: center; border-radius: 5px; color: var(--lp-text-secondary); background: var(--lp-surface-subtle); font-size: 12px; font-weight: 700; }
 .save-error { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 16px; padding: 10px 12px; border-radius: 7px; color: var(--lp-danger); background: var(--lp-danger-soft); }
-.question-actions { display: flex; justify-content: space-between; margin-top: 38px; padding-top: 18px; border-top: 1px solid var(--lp-border); }
+.question-actions { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; margin-top: 38px; padding-top: 18px; border-top: 1px solid var(--lp-border); }
 .mobile-submit { display: none; }
 .completion-card { max-width: 680px; margin: 5vh auto; padding: 48px; border: 1px solid var(--lp-border); border-radius: var(--lp-radius-lg); background: var(--lp-surface); text-align: center; box-shadow: var(--lp-shadow-md); }
 .completion-icon { display: grid; width: 48px; height: 48px; margin: 0 auto 18px; place-items: center; border-radius: 50%; color: #287548; background: #eaf7ef; font-size: 25px; }
@@ -162,6 +241,8 @@ void diagnostic.load();
 .submit-summary p { margin: 0; font-weight: 600; }
 .submit-summary .el-icon { color: #b47a20; font-size: 22px; }
 .submit-warning { color: #8a5b14; }
+.exit-description { margin: 0; color: var(--lp-text-secondary); line-height: 1.7; }
+.exit-actions { display: flex; justify-content: flex-end; gap: 10px; flex-wrap: wrap; }
 @media (max-width: 900px) { .assessment-layout { grid-template-columns: 1fr; } .question-navigator { order: 2; } .number-grid { grid-template-columns: repeat(10, 1fr); } }
-@media (max-width: 620px) { .assessment-header { align-items: stretch; flex-direction: column; } .assessment-progress { width: 100%; } .assessment-progress span { text-align: left; } .number-grid { grid-template-columns: repeat(5, 1fr); } .question-card { min-height: 0; padding: 22px; } .mobile-submit { display: flex; justify-content: flex-end; margin-top: 14px; } .score-grid { grid-template-columns: 1fr; } .completion-card { padding: 30px 20px; } }
+@media (max-width: 620px) { .assessment-header { align-items: stretch; flex-direction: column; } .assessment-progress { width: 100%; } .assessment-progress span { text-align: left; } .number-grid { grid-template-columns: repeat(5, 1fr); } .question-card { min-height: 0; padding: 22px 18px; } .mobile-submit { display: flex; justify-content: flex-end; margin-top: 14px; } .score-grid { grid-template-columns: 1fr; } .completion-card { padding: 30px 20px; } }
 </style>

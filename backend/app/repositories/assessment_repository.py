@@ -38,6 +38,10 @@ class AssessmentRepository:
         self.session.flush()
         return assessment_question
 
+    def delete(self, assessment: Assessment) -> None:
+        self.session.delete(assessment)
+        self.session.flush()
+
     def get_question(self, assessment_id: int, assessment_question_id: int) -> AssessmentQuestion | None:
         statement = select(AssessmentQuestion).where(
             AssessmentQuestion.id == assessment_question_id,

@@ -1083,55 +1083,6 @@ p {
   margin: 0;
 }
 
-.summary-layout {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--lp-space-4);
-  padding-top: var(--lp-space-2);
-}
-
-.summary-overview {
-  grid-column: 1 / -1;
-  padding: var(--lp-space-5);
-  border-left: 3px solid var(--lp-primary);
-  border-radius: 0 var(--lp-radius-sm) var(--lp-radius-sm) 0;
-  background: var(--lp-primary-soft);
-}
-
-.summary-overview h2,
-.summary-section h3 {
-  margin-bottom: var(--lp-space-2);
-  color: var(--lp-ink);
-  font-size: 16px;
-  font-weight: 650;
-}
-
-.summary-overview p {
-  margin-bottom: 0;
-  color: #294565;
-  line-height: 1.8;
-}
-
-.summary-section {
-  padding: var(--lp-space-4) var(--lp-space-5);
-  border: 1px solid var(--lp-border);
-  border-radius: var(--lp-radius-sm);
-}
-
-.summary-section p,
-.summary-section ul {
-  margin: 0;
-  color: var(--lp-text-secondary);
-}
-
-.summary-section ul {
-  padding-left: 18px;
-}
-
-.summary-section li + li {
-  margin-top: var(--lp-space-2);
-}
-
 .ai-provenance {
   grid-column: 1 / -1;
   margin: 0;
@@ -1167,6 +1118,11 @@ p {
   box-shadow: var(--lp-shadow-sm);
 }
 
+.study-card:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--lp-primary) 28%, transparent);
+  outline-offset: 3px;
+}
+
 .study-card__label {
   color: var(--lp-primary);
   font-size: 12px;
@@ -1188,6 +1144,24 @@ p {
 .study-card small {
   color: var(--lp-text-tertiary);
   line-height: 1.5;
+}
+
+.study-card__interaction {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--lp-space-3);
+  margin-top: auto;
+  padding-top: var(--lp-space-3);
+  border-top: 1px solid var(--lp-border);
+  color: var(--lp-text-tertiary);
+  font-size: 12px;
+}
+
+.study-card__action {
+  flex: none;
+  color: var(--lp-primary);
+  font-weight: 700;
 }
 
 .qa-panel {

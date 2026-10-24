@@ -53,6 +53,8 @@ class CourseKnowledgeBuildResult:
     node_count: int
     contains_edge_count: int
     prerequisite_edge_count: int
+    added_node_count: int
+    reused_node_count: int
     reused: bool
 
 
@@ -188,6 +190,8 @@ class CourseKnowledgeBuildService:
     ) -> CourseKnowledgeBuildResult:
         ready_materials = self._load_ready_materials(course_id)
         checkpoint = self._capture_checkpoint(course_id)
+        checkpoint_data = json.loads(checkpoint)
+        previous_active_node_ids = {item["id"] for item in checkpoint_data["nodes"] if item["is_active"]}
 
         extraction_results = []
         try:
@@ -216,6 +220,7 @@ class CourseKnowledgeBuildService:
                 self._restore_checkpoint(course_id, checkpoint)
             raise self._stage_error(error) from error
 
+        current_node_ids = {node.id for node in canonicalization_result.nodes}
         return CourseKnowledgeBuildResult(
             course_id=course_id,
             material_count=len(ready_materials),
@@ -224,6 +229,8 @@ class CourseKnowledgeBuildService:
             prerequisite_edge_count=sum(
                 edge.relation_type.value == "prerequisite" for edge in relationship_result.edges
             ),
+            added_node_count=len(current_node_ids - previous_active_node_ids),
+            reused_node_count=len(current_node_ids & previous_active_node_ids),
             reused=(
                 all(result.reused for result in extraction_results)
                 and canonicalization_result.reused

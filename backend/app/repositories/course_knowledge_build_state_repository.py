@@ -40,6 +40,8 @@ class CourseKnowledgeBuildStateRepository:
                 stage="queued",
                 error_code=None,
                 error_message=None,
+                last_added_node_count=0,
+                last_reused_node_count=0,
                 requested_material_snapshot_hash=material_snapshot_hash,
                 checkpoint_json=checkpoint_json,
                 started_at=started_at,

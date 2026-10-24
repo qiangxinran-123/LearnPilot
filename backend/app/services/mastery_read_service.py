@@ -31,6 +31,37 @@ from backend.app.services.mastery_calculator import MasteryCalculationError, Mas
 from backend.app.services.mastery_config import MASTERY_V1_CONFIG
 
 
+def is_persisted_mastery_state_current(
+    *,
+    node_id: int,
+    state: StudentKnowledgeState,
+    rows: list[LearningEvidence],
+    calculator: MasteryCalculator | None = None,
+) -> bool:
+    """Verify that a persisted M5 state still represents its submitted Evidence."""
+
+    active_calculator = calculator or MasteryCalculator(MASTERY_V1_CONFIG)
+    if state.algorithm_version != MASTERY_V1_CONFIG.algorithm_version:
+        return False
+    try:
+        evidence = [MasteryEvidenceSchema.model_validate(row) for row in rows]
+        for item in evidence:
+            if (
+                item.user_id != state.user_id
+                or item.course_id != state.course_id
+                or item.current_knowledge_node_id != node_id
+                or item.historical_knowledge_node_ref != node_id
+            ):
+                return False
+        versions = {item.knowledge_model_version for item in evidence}
+        if len(versions) > 1:
+            return False
+        prepared = active_calculator.prepare(evidence)
+        return calculate_evidence_fingerprint(prepared, active_calculator) == state.evidence_fingerprint
+    except MasteryCalculationError, ValidationError:
+        return False
+
+
 class MasteryReadError(ValueError):
     def __init__(self, code: str, message: str) -> None:
         self.code = code
@@ -167,7 +198,12 @@ class MasteryReadService:
     ) -> KnowledgeNodeMasteryReadSchema:
         if state is None:
             return self._unavailable_state(node_id, KnowledgeStateAvailability.NOT_CALCULATED)
-        if not self._matches_persisted_input(node_id, state, evidence):
+        if not is_persisted_mastery_state_current(
+            node_id=node_id,
+            state=state,
+            rows=evidence,
+            calculator=self.calculator,
+        ):
             return self._unavailable_state(node_id, KnowledgeStateAvailability.STALE, state)
         return KnowledgeNodeMasteryReadSchema(
             knowledge_node_id=node_id,
@@ -183,32 +219,6 @@ class MasteryReadService:
             calculated_at=state.calculated_at,
             calculation_state=KnowledgeStateAvailability.CALCULATED,
         )
-
-    def _matches_persisted_input(
-        self,
-        node_id: int,
-        state: StudentKnowledgeState,
-        rows: list[LearningEvidence],
-    ) -> bool:
-        if state.algorithm_version != MASTERY_V1_CONFIG.algorithm_version:
-            return False
-        try:
-            evidence = [MasteryEvidenceSchema.model_validate(row) for row in rows]
-            for item in evidence:
-                if (
-                    item.user_id != state.user_id
-                    or item.course_id != state.course_id
-                    or item.current_knowledge_node_id != node_id
-                    or item.historical_knowledge_node_ref != node_id
-                ):
-                    return False
-            versions = {item.knowledge_model_version for item in evidence}
-            if len(versions) > 1:
-                return False
-            prepared = self.calculator.prepare(evidence)
-            return calculate_evidence_fingerprint(prepared, self.calculator) == state.evidence_fingerprint
-        except MasteryCalculationError, ValidationError:
-            return False
 
     @staticmethod
     def _unavailable_state(
@@ -252,4 +262,9 @@ def get_mastery_read_service(
     return MasteryReadService(session, settings)
 
 
-__all__ = ["MasteryReadError", "MasteryReadService", "get_mastery_read_service"]
+__all__ = [
+    "MasteryReadError",
+    "MasteryReadService",
+    "get_mastery_read_service",
+    "is_persisted_mastery_state_current",
+]

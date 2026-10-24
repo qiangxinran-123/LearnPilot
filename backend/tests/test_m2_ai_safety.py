@@ -73,10 +73,29 @@ def test_long_summary_processes_every_source_segment() -> None:
 
     assert isinstance(result.data, SummaryOutput)
     maps = [source for operation, source in client.calls if operation == "ai_summary_map"]
-    assert len(maps) > settings.llm_summary_max_chunks
+    assert 1 < len(maps) < len(segments)
     assert any(operation == "ai_summary_reduce" for operation, _ in client.calls)
     for index in range(20):
         assert any(f"SEGMENT_{index:02d}" in source for source in maps)
+
+
+def test_fragmented_long_summary_does_not_multiply_provider_calls() -> None:
+    settings = Settings(llm_context_chars=12000, llm_chunk_chars=800, llm_summary_max_chunks=8)
+    service = make_service(settings)
+    segments = [
+        {"text": f"FRAGMENT_{index:03d} " + ("evidence " * 4), "source_reference": f"段落 {index + 1}"}
+        for index in range(528)
+    ]
+    plain_text = "\n".join(str(segment["text"]) for segment in segments)
+    ready = ReadyMaterial(1, plain_text, segments)
+    client = FakeStructuredClient()
+
+    service._generate_summary_output(client, ready)
+
+    maps = [source for operation, source in client.calls if operation == "ai_summary_map"]
+    assert len(maps) <= 3
+    assert "FRAGMENT_000" in maps[0]
+    assert "FRAGMENT_527" in maps[-1]
 
 
 def test_summary_above_explicit_limit_fails_without_model_call() -> None:
