@@ -46,3 +46,8 @@ class ResponseRepository:
             response.answered_at = answered_at
         self.session.flush()
         return response
+
+    def create_submitted(self, response: Response) -> Response:
+        self.session.add(response)
+        self.session.flush()
+        return response

@@ -7,6 +7,7 @@ import LearnView from '@/views/LearnView.vue';
 import { fetchCourses } from '@/services/courses';
 import { fetchKnowledgeModel } from '@/services/knowledge';
 import { fetchLearningPlan, generateLearningPlan } from '@/services/learningPlans';
+import { createLearningSession, fetchActiveLearningSession } from '@/services/learningSessions';
 import type { LearningPlanResponse } from '@/types/learningPlan';
 
 const routing = vi.hoisted(() => ({
@@ -28,6 +29,10 @@ vi.mock('@/services/knowledge', () => ({ fetchKnowledgeModel: vi.fn() }));
 vi.mock('@/services/learningPlans', () => ({
   fetchLearningPlan: vi.fn(),
   generateLearningPlan: vi.fn(),
+}));
+vi.mock('@/services/learningSessions', () => ({
+  createLearningSession: vi.fn(),
+  fetchActiveLearningSession: vi.fn(),
 }));
 
 const courses = [
@@ -124,7 +129,49 @@ describe('M6-4 recommendation views', () => {
     routing.route.query = {};
     vi.mocked(fetchCourses).mockResolvedValue({ count: courses.length, courses });
     vi.mocked(fetchLearningPlan).mockResolvedValue(available);
+    vi.mocked(fetchActiveLearningSession).mockResolvedValue({ session: null });
     vi.mocked(fetchKnowledgeModel).mockResolvedValue(model);
+  });
+
+  it('creates one session from the recommendation and protects repeated clicks', async () => {
+    let resolveCreate!: (value: Awaited<ReturnType<typeof createLearningSession>>) => void;
+    vi.mocked(createLearningSession).mockReturnValue(
+      new Promise((resolve) => {
+        resolveCreate = resolve;
+      }),
+    );
+    const wrapper = mount(LearnView, mountOptions());
+    await flushPromises();
+    const button = wrapper.findAll('button').find((item) => item.text().includes('开始学习'));
+    await button?.trigger('click');
+    await button?.trigger('click');
+    expect(createLearningSession).toHaveBeenCalledTimes(1);
+    resolveCreate({
+      session_id: 91,
+      user_id: 2,
+      course_id: 7,
+      course_name: '离散数学',
+      target_knowledge_node_id: 11,
+      target_knowledge_node_name: '集合映射',
+      source_learning_plan_id: 31,
+      practice_assessment_id: null,
+      status: 'created',
+      session_contract_version: 'learning_session_v1',
+      completion_summary: null,
+      recommendation_refresh_status: 'not_requested',
+      tasks: [],
+      started_at: null,
+      completed_at: null,
+      cancelled_at: null,
+      created_at: '2026-10-25T08:00:00Z',
+      updated_at: '2026-10-25T08:00:00Z',
+      reused: false,
+    });
+    await flushPromises();
+    expect(routing.push).toHaveBeenCalledWith({
+      name: 'learning-session',
+      params: { sessionId: 91 },
+    });
   });
 
   it('shows the same real recommendation target on Dashboard and Learn without POSTing', async () => {
@@ -193,13 +240,16 @@ describe('M6-4 recommendation views', () => {
   it.each([
     ['preliminary', '初步学习建议', '当前诊断证据仍然有限'],
     ['foundational', '基础学习路线', '当前尚无充分的个人诊断数据'],
-  ] as const)('shows the real %s plan level without claiming precise personalization', async (level, title, copy) => {
-    vi.mocked(fetchLearningPlan).mockResolvedValue({ ...available, plan_level: level });
-    const wrapper = mount(LearnView, mountOptions());
-    await flushPromises();
-    expect(wrapper.text()).toContain(title);
-    expect(wrapper.text()).toContain(copy);
-  });
+  ] as const)(
+    'shows the real %s plan level without claiming precise personalization',
+    async (level, title, copy) => {
+      vi.mocked(fetchLearningPlan).mockResolvedValue({ ...available, plan_level: level });
+      const wrapper = mount(LearnView, mountOptions());
+      await flushPromises();
+      expect(wrapper.text()).toContain(title);
+      expect(wrapper.text()).toContain(copy);
+    },
+  );
 
   it('offers explicit generation for an available foundational recommendation', async () => {
     vi.mocked(fetchLearningPlan).mockResolvedValue({
@@ -214,7 +264,9 @@ describe('M6-4 recommendation views', () => {
     await flushPromises();
     expect(wrapper.text()).toContain('生成基础学习路线');
     expect(generateLearningPlan).not.toHaveBeenCalled();
-    const button = wrapper.findAll('button').find((item) => item.text().includes('生成基础学习路线'));
+    const button = wrapper
+      .findAll('button')
+      .find((item) => item.text().includes('生成基础学习路线'));
     await button?.trigger('click');
     await flushPromises();
     expect(generateLearningPlan).toHaveBeenCalledTimes(1);

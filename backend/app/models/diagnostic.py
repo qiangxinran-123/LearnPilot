@@ -26,6 +26,7 @@ class KnowledgeRelationRole(StrEnum):
 
 class AssessmentType(StrEnum):
     INITIAL_DIAGNOSTIC = "initial_diagnostic"
+    PRACTICE = "practice"
 
 
 class AssessmentStatus(StrEnum):

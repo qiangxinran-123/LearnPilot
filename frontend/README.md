@@ -6,7 +6,9 @@ M2 connects the Course workspace to the backend: course creation/edit/deletion, 
 
 M3-E adds a course learning workspace with overview, materials, a hierarchy-first knowledge structure and an auxiliary graph. It reads the persisted M3 model and exposes node sources and relationship evidence without persisting graph layout state.
 
-M6 shows the persisted course learning plan on Dashboard and Learn, including recommendation reasons, prerequisite context, evidence level, and one to three ordered tasks. The Diagnose workspace supports bounded question-bank preparation, human review, interrupted-assessment recovery, and explicit synchronization after new materials. Task execution and completion are not recorded in this stage.
+M6 shows the persisted course learning plan on Dashboard and Learn, including recommendation reasons, prerequisite context, evidence level, and one to three ordered tasks. The Diagnose workspace supports bounded question-bank preparation, human review, interrupted-assessment recovery, and explicit synchronization after new materials.
+
+M7 opens a recoverable Learning Session from the plan, with cited course content, an AI Tutor, adaptive practice and a completion summary. The summary displays saved practice results, evidence, mastery changes and recommendation refresh status.
 
 ## Runtime
 
@@ -76,7 +78,7 @@ npm run build
 
 ## Verification
 
-The latest saved M6 regression report records typecheck, lint, production build, and the full Vitest suite (`143/143`) passing. This release operation does not rerun those checks. The M6 view tests cover learning-plan levels, course switching, stale responses, diagnosis states and question-bank actions.
+The M7 final acceptance report records typecheck, lint, production build, and the full Vitest suite (`181/181`) passing, alongside an isolated Chromium learning flow. This release operation does not rerun those checks. See [M7 final acceptance](../docs/migration/M7_6_FINAL_ACCEPTANCE_REPORT.md) for the scope and limitations.
 
 A real-provider browser E2E used two self-authored TXT materials and the course-level build flow. It produced a persisted model with 12 nodes, 3 `CONTAINS` edges and 13 `PREREQUISITE` edges, then verified node sources, edge evidence, filtering, pan/zoom/fit/reset and responsive behavior at 1440/1280/1024 px. No credential, provider endpoint or complete user material is recorded in the repository.
 

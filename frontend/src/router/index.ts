@@ -97,6 +97,12 @@ export const productRoutes: RouteRecordRaw[] = [
     meta: { title: '学习', navLabel: '学习' },
   },
   {
+    path: '/learn/sessions/:sessionId',
+    name: 'learning-session',
+    component: () => import('@/views/LearningSessionView.vue'),
+    meta: { title: '学习会话', navLabel: '学习' },
+  },
+  {
     path: '/progress',
     name: 'progress',
     component: () => import('@/views/ProgressView.vue'),

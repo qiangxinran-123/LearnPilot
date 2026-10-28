@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
 from backend.app.db.models import Assessment, LearningEvidence, Response
-from backend.app.models import AssessmentStatus, EvidenceSourceType
+from backend.app.models import AssessmentStatus, AssessmentType, EvidenceSourceType
 
 
 class LearningEvidenceRepository:
@@ -93,7 +93,16 @@ class LearningEvidenceRepository:
                 LearningEvidence.user_id == user_id,
                 LearningEvidence.course_id == course_id,
                 LearningEvidence.current_knowledge_node_id.in_(knowledge_node_ids),
-                LearningEvidence.source_type == EvidenceSourceType.DIAGNOSTIC,
+                or_(
+                    and_(
+                        LearningEvidence.source_type == EvidenceSourceType.DIAGNOSTIC,
+                        Assessment.assessment_type == AssessmentType.INITIAL_DIAGNOSTIC,
+                    ),
+                    and_(
+                        LearningEvidence.source_type == EvidenceSourceType.PRACTICE,
+                        Assessment.assessment_type == AssessmentType.PRACTICE,
+                    ),
+                ),
                 Assessment.owner_id == user_id,
                 Assessment.course_id == course_id,
                 Assessment.status == AssessmentStatus.SUBMITTED,

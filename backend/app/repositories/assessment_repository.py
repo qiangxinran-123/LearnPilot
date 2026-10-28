@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session, selectinload
 
 from backend.app.db.models import Assessment, AssessmentQuestion
@@ -16,13 +16,22 @@ class AssessmentRepository:
         self.session.flush()
         return assessment
 
-    def get_for_owner(self, assessment_id: int, owner_id: int, *, load_history: bool = False) -> Assessment | None:
+    def get_for_owner(
+        self,
+        assessment_id: int,
+        owner_id: int,
+        *,
+        load_history: bool = False,
+        for_update: bool = False,
+    ) -> Assessment | None:
         statement = select(Assessment).where(Assessment.id == assessment_id, Assessment.owner_id == owner_id)
         if load_history:
             statement = statement.options(
                 selectinload(Assessment.questions).selectinload(AssessmentQuestion.response),
                 selectinload(Assessment.responses),
             )
+        if for_update:
+            statement = statement.with_for_update()
         return self.session.scalar(statement)
 
     def list_for_course_owner(self, course_id: int, owner_id: int) -> list[Assessment]:
@@ -56,6 +65,17 @@ class AssessmentRepository:
             .order_by(AssessmentQuestion.order_index)
         )
         return list(self.session.scalars(statement))
+
+    def question_exposure_counts(self, *, owner_id: int, question_ids: list[int]) -> dict[int, int]:
+        if not question_ids:
+            return {}
+        statement = (
+            select(AssessmentQuestion.question_id, func.count(AssessmentQuestion.id))
+            .join(Assessment, Assessment.id == AssessmentQuestion.assessment_id)
+            .where(Assessment.owner_id == owner_id, AssessmentQuestion.question_id.in_(question_ids))
+            .group_by(AssessmentQuestion.question_id)
+        )
+        return {int(question_id): int(count) for question_id, count in self.session.execute(statement)}
 
     def compare_and_set_status(
         self, assessment_id: int, expected: AssessmentStatus, target: AssessmentStatus, **values: object

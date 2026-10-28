@@ -1,6 +1,6 @@
 # LearnPilot API 总览
 
-本文以当前 LearnPilot V1 / M6 代码为准。
+本文以当前 LearnPilot V1 / M7 代码为准。
 
 - 本地 Base URL：`http://127.0.0.1:8000`
 - Swagger UI：`GET /docs`
@@ -152,6 +152,23 @@ MaterialContent + parser segments
 
 学习计划分为 `PERSONALIZED`、`PRELIMINARY` 和 `FOUNDATIONAL` 三个证据级别。先修关系是推荐的硬约束；未知掌握度不会换算成零分。资料同步仍使用既有知识构建任务接口，状态响应增加资料同步与新增/复用节点计数。
 
+## M7 学习会话接口
+
+| 方法 | 路径 | 作用 |
+| --- | --- | --- |
+| POST | `/api/learning/sessions` | 根据学习计划创建或复用会话。 |
+| GET | `/api/learning/sessions/active?course_id={course_id}` | 查询课程当前活动会话。 |
+| GET | `/api/learning/sessions/{session_id}` | 读取会话、任务状态与已保存的总结。 |
+| GET | `/api/learning/sessions/{session_id}/content` | 读取当前阶段可追溯的学习资料，支持 `phase` 和 `q`。 |
+| PATCH | `/api/learning/sessions/{session_id}/tasks/{phase}` | 更新有序学习任务状态。 |
+| GET/POST | `/api/learning/sessions/{session_id}/tutor/messages` | 读取导师历史或发送消息；发送需 `Idempotency-Key` 请求头。 |
+| POST | `/api/learning/sessions/{session_id}/practice/next` | 开始或恢复练习并获取下一状态。 |
+| PUT | `/api/learning/sessions/{session_id}/practice/responses/{assessment_question_id}` | 提交并确定性评分一题。 |
+| POST | `/api/learning/sessions/{session_id}/complete` | 结算已完成会话，保存练习证据、掌握状态和总结。 |
+| POST | `/api/learning/sessions/{session_id}/cancel` | 取消可取消的会话。 |
+
+会话和资料按当前用户及课程隔离。导师引用必须匹配真实资料来源；练习未提交前不返回正确答案。完成操作可安全重复：已保存的证据和掌握结果不会重复写入，结算后的推荐刷新失败可单独重试。
+
 ## 统一错误格式
 
 可预期错误统一返回：
@@ -193,3 +210,5 @@ MaterialContent + parser segments
 - [M3 最终验收](migration/M3_FINAL_ACCEPTANCE.md)
 - [M6 推荐与学习计划架构](architecture/M6_RECOMMENDATION_ARCHITECTURE.md)
 - [M6 实施与验收报告](migration/M6_IMPLEMENTATION_REPORT.md)
+- [M7 集成设计](architecture/M7_INTEGRATION_DESIGN.md)
+- [M7 最终验收报告](migration/M7_6_FINAL_ACCEPTANCE_REPORT.md)

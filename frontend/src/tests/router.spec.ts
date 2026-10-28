@@ -25,6 +25,13 @@ describe('product router', () => {
     expect(router.currentRoute.value.name).toBe('not-found');
   });
 
+  it('keeps the learning session workspace under the Learning navigation label', async () => {
+    const router = createRouter({ history: createMemoryHistory(), routes });
+    await router.push('/learn/sessions/42');
+    expect(router.currentRoute.value.name).toBe('learning-session');
+    expect(router.currentRoute.value.meta.navLabel).toBe('学习');
+  });
+
   it('preserves page scroll only for node focus changes inside the same course knowledge map', () => {
     const router = createRouter({ history: createMemoryHistory(), routes });
     const from = router.resolve('/courses/7?tab=knowledge-structure&nodeId=1');

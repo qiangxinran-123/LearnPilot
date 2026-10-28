@@ -14,6 +14,7 @@ import {
   unavailablePresentation,
 } from '@/components/learning/planPresentation';
 import { useLearningPlan } from '@/composables/useLearningPlan';
+import { useLearningSession } from '@/composables/useLearningSession';
 import { useCourseStore } from '@/stores/courses';
 
 const route = useRoute();
@@ -21,6 +22,7 @@ const router = useRouter();
 const courseStore = useCourseStore();
 const selectedCourseId = ref<number | null>(null);
 const learningPlan = useLearningPlan();
+const learningSession = useLearningSession();
 
 const selectedCourse = computed(
   () => courseStore.courses.find((course) => course.id === selectedCourseId.value) ?? null,
@@ -63,9 +65,26 @@ function openDiagnosis(): void {
   if (!selectedCourseId.value) return;
   void router.push({ name: 'diagnose', query: { courseId: String(selectedCourseId.value) } });
 }
+function openSession(sessionId: number): void {
+  void router.push({ name: 'learning-session', params: { sessionId } });
+}
+async function startOrResumeSession(): Promise<void> {
+  if (learningSession.activeSession.value) {
+    openSession(learningSession.activeSession.value.session_id);
+    return;
+  }
+  const plan = learningPlan.plan.value;
+  if (!selectedCourseId.value || !plan) return;
+  const created = await learningSession.start({
+    course_id: selectedCourseId.value,
+    learning_plan_id: plan.plan_id,
+  });
+  if (created) openSession(created.session_id);
+}
 
 watch(selectedCourseId, (courseId) => {
   void learningPlan.load(courseId);
+  void learningSession.loadActive(courseId);
   if (courseId && String(route.query.courseId ?? '') !== String(courseId)) {
     void router.replace({ name: 'learn', query: { courseId: String(courseId) } });
   }
@@ -88,10 +107,7 @@ onMounted(async () => {
 
 <template>
   <section class="page-view learn-page">
-    <PageHeader
-      title="学习计划"
-      description="把下一步学习安排建立在真实知识状态与课程结构之上。"
-    />
+    <PageHeader title="学习计划" description="把下一步学习安排建立在真实知识状态与课程结构之上。" />
     <section class="course-context" aria-labelledby="current-course-title">
       <div class="course-context__copy">
         <p id="current-course-title">当前学习课程</p>
@@ -112,6 +128,26 @@ onMounted(async () => {
         />
       </el-select>
     </section>
+
+    <section
+      v-if="learningSession.activeSession.value"
+      class="active-session-banner"
+      aria-labelledby="active-session-title"
+    >
+      <div>
+        <p>可继续的学习会话</p>
+        <h2 id="active-session-title">
+          {{ learningSession.activeSession.value.target_knowledge_node_name }}
+        </h2>
+        <span>进度已保存在服务端，刷新或离开页面后仍可恢复。</span>
+      </div>
+      <el-button type="primary" @click="openSession(learningSession.activeSession.value.session_id)"
+        >继续学习</el-button
+      >
+    </section>
+    <p v-if="learningSession.errorMessage.value" class="session-entry-error" role="alert">
+      {{ learningSession.errorMessage.value }}
+    </p>
 
     <LoadingBlock
       v-if="courseStore.isLoading || learningPlan.state.value === 'loading'"
@@ -230,9 +266,19 @@ onMounted(async () => {
             >
           </div>
         </div>
-        <el-button plain @click="openKnowledgeMap">
-          <el-icon><Connection /></el-icon>在知识地图中定位
-        </el-button>
+        <div class="learning-target__actions">
+          <el-button plain @click="openKnowledgeMap">
+            <el-icon><Connection /></el-icon>在知识地图中定位
+          </el-button>
+          <el-button
+            type="primary"
+            :loading="learningSession.isCreating.value"
+            :disabled="learningSession.isCreating.value || learningSession.isLoading.value"
+            @click="startOrResumeSession"
+          >
+            {{ learningSession.activeSession.value ? '继续学习' : '开始学习' }}
+          </el-button>
+        </div>
       </section>
 
       <div class="plan-context-grid">
@@ -304,6 +350,37 @@ onMounted(async () => {
   border-left: 4px solid var(--lp-primary);
   border-radius: var(--lp-radius-md);
   background: var(--lp-surface);
+}
+.active-session-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 18px;
+  padding: 18px 20px;
+  border: 1px solid #cadcf2;
+  border-radius: var(--lp-radius-md);
+  background: var(--lp-primary-soft);
+}
+.active-session-banner p {
+  margin: 0 0 3px;
+  color: var(--lp-primary);
+  font-size: 12px;
+  font-weight: 700;
+}
+.active-session-banner h2 {
+  margin: 0 0 4px;
+  color: var(--lp-ink);
+  font-size: 18px;
+}
+.active-session-banner span {
+  color: var(--lp-text-secondary);
+  font-size: 12px;
+}
+.session-entry-error {
+  margin: -6px 0 18px;
+  color: var(--lp-danger);
+  font-size: 13px;
 }
 .course-context__copy {
   display: grid;
@@ -402,6 +479,11 @@ onMounted(async () => {
 }
 .learning-target__main {
   min-width: 0;
+}
+.learning-target__actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 10px;
 }
 .learning-target h2 {
   margin-bottom: 8px;
@@ -593,6 +675,7 @@ onMounted(async () => {
 }
 @media (max-width: 700px) {
   .course-context,
+  .active-session-banner,
   .plan-entry,
   .plan-level,
   .task-section__header,
@@ -608,6 +691,10 @@ onMounted(async () => {
     flex-basis: auto;
   }
   .plan-entry__actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .learning-target__actions {
     align-items: stretch;
     flex-direction: column;
   }

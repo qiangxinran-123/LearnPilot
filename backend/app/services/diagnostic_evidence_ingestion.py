@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import nullcontext
 from datetime import timezone
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
@@ -9,7 +10,7 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from backend.app.db.models import Assessment, AssessmentQuestion, KnowledgeNode, Response
-from backend.app.models import AssessmentStatus, EvidenceSourceType
+from backend.app.models import AssessmentStatus, AssessmentType, EvidenceSourceType
 from backend.app.repositories import LearningEvidenceRepository
 from backend.app.schemas.diagnostic import AssessmentQuestionSnapshotSchema
 from backend.app.schemas.evidence_ingestion import (
@@ -44,8 +45,9 @@ class DiagnosticEvidenceExtractor:
         *,
         expected_user_id: int | None = None,
         expected_course_id: int | None = None,
+        in_transaction: bool = False,
     ) -> EvidenceExtractionPlanSchema:
-        with self.session.begin():
+        with nullcontext() if in_transaction else self.session.begin():
             assessment = self.session.get(Assessment, assessment_id)
             if assessment is None:
                 raise EvidenceIngestionError(
@@ -69,6 +71,12 @@ class DiagnosticEvidenceExtractor:
                 raise EvidenceIngestionError(
                     "ASSESSMENT_NOT_SUBMITTED",
                     "Only submitted assessments can produce learning evidence.",
+                    assessment_id=assessment_id,
+                )
+            if assessment.assessment_type == AssessmentType.PRACTICE and not in_transaction:
+                raise EvidenceIngestionError(
+                    "SOURCE_TYPE_UNSUPPORTED",
+                    "Practice evidence is created by session settlement.",
                     assessment_id=assessment_id,
                 )
 
@@ -152,7 +160,11 @@ class DiagnosticEvidenceExtractor:
                         LearningEvidenceCreateSchema(
                             user_id=assessment.owner_id,
                             course_id=assessment.course_id,
-                            source_type=EvidenceSourceType.DIAGNOSTIC,
+                            source_type=(
+                                EvidenceSourceType.PRACTICE
+                                if assessment.assessment_type == AssessmentType.PRACTICE
+                                else EvidenceSourceType.DIAGNOSTIC
+                            ),
                             source_assessment_id=assessment.id,
                             source_question_snapshot_id=question.id,
                             source_response_id=response.id,

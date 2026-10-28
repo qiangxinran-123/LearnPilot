@@ -2,12 +2,13 @@
 
 LearnPilot 是面向大学理工科课程的 AI 学习诊断与个性化学习系统。
 
-当前代码基线为 **LearnPilot V1 / M6 Final Acceptance**。旧版 LearnPilot V0.x 的 JSON 原型、原生前端和比赛材料仍保留用于追溯，但不再代表当前运行架构。核心链路为：
+当前代码基线为 **LearnPilot V1 / M7 Final Acceptance**。旧版 LearnPilot V0.x 的 JSON 原型、原生前端和比赛材料仍保留用于追溯，但不再代表当前运行架构。核心链路为：
 
 ```text
 课程资料 → 知识建模 → AI 题库 → 学习诊断 → 确定性评分
   → Learning Evidence → Mastery/Confidence → 个性化知识地图
-  → 推荐排序 → 学习计划与任务展示
+  → 推荐排序 → 学习计划 → 学习会话、AI 导师与自适应练习
+  → 练习证据 → 掌握状态和推荐刷新
 ```
 
 ## 当前能力
@@ -24,8 +25,10 @@ LearnPilot 是面向大学理工科课程的 AI 学习诊断与个性化学习�
 - M5 支持 Learning Evidence、历史诊断证据幂等导入、Mastery Score、Confidence、学生知识状态、可解释证据、课程结构/掌握状态地图切换、来源原文片段预览和资料 AI 学习工具入口提示。
 - M6 根据掌握状态、知识重要度及先修关系生成可解释推荐；保存并复用课程学习计划，在首页和学习页展示目标与 1–3 项学习任务。证据不足时明确区分个性化、初步和基础计划，不把未知掌握度当作零分。
 - M6 体验完善包括课程级诊断题准备与人工审核入口、未完成诊断恢复，以及新增资料后的显式知识同步和题目缺口补充。
+- M7 将学习计划接入可恢复的学习会话，按任务顺序呈现课程资料和来源；AI 导师结合当前学习内容提供提示、引导和讲解。
+- M7 自适应练习根据答题表现调整难度；完成会话后将真实练习结果转为可追溯证据，刷新掌握状态与后续推荐，并展示学习总结。
 
-M3 建立课程知识模型，M4/M5 在其上提供诊断与学生知识状态能力，M6 使用这些数据生成推荐与学习计划。Mastery 是基于有效 Learning Evidence 的确定性掌握度估计，不是单次诊断正确率，也不是经过教育测量学标定的真实掌握概率。学习任务的执行与完成记录属于后续阶段，图坐标等展示状态仍不会写入领域数据。
+M3 建立课程知识模型，M4/M5 提供诊断与学生知识状态，M6 生成推荐与学习计划，M7 完成学习、练习与反馈闭环。Mastery 是基于有效 Learning Evidence 的确定性掌握度估计，不是单次诊断正确率，也不是经过教育测量学标定的真实掌握概率。图坐标等展示状态不会写入领域数据。
 
 ## 技术栈
 
@@ -101,7 +104,11 @@ LLM_MODEL=...
 11. `0011_m5b_evidence_current_node_mapping`：历史知识节点当前映射状态；
 12. `0012_m5c_student_knowledge_state`：学生知识状态、Mastery/Confidence 结果与算法版本；
 13. `0013_m6_learning_plans`：课程学习计划与有序任务；
-14. `0014_m6_ux_fix4_sync_counts`：知识同步新增/复用节点计数。
+14. `0014_m6_ux_fix4_sync_counts`：知识同步新增/复用节点计数；
+15. `0015_m7_1_learning_sessions`：学习会话与任务状态；
+16. `0016_m7_3_tutor_messages`：会话内导师消息；
+17. `0017_m7_4_practice_assessment`：练习测评类型；
+18. `0018_m7_5_practice_evidence`：练习证据来源。
 
 旧 `backend/app/data/courses.json` 不会在启动时自动导入。先执行 dry-run，再决定是否写入目标数据库：
 
@@ -147,6 +154,13 @@ LLM_MODEL=...
 - `GET /api/courses/{course_id}/learning-plan`
 - `POST /api/courses/{course_id}/learning-plan/generate`
 - `POST /api/diagnostics/courses/{course_id}/questions/prepare`
+- `POST /api/learning/sessions`、`GET /api/learning/sessions/active`
+- `GET /api/learning/sessions/{session_id}`、`GET /api/learning/sessions/{session_id}/content`
+- `GET/POST /api/learning/sessions/{session_id}/tutor/messages`
+- `POST /api/learning/sessions/{session_id}/practice/next`
+- `PUT /api/learning/sessions/{session_id}/practice/responses/{assessment_question_id}`
+- `PATCH /api/learning/sessions/{session_id}/tasks/{phase}`
+- `POST /api/learning/sessions/{session_id}/complete`、`POST /api/learning/sessions/{session_id}/cancel`
 
 请求参数、响应边界和错误码见 [API 总览](docs/API_OVERVIEW.md)。
 
@@ -184,6 +198,12 @@ M4 的诊断题固定知识节点和历史题目快照，提交后使用已保�
 
 计划区分个性化、初步与基础三个证据级别。没有诊断证据时，基础计划只依据真实课程知识结构选择先修起点；证据不足时不会伪造掌握度或学习进度。诊断页可显式补充待审核题目，并在新增资料后同步知识模型与题目缺口。
 
+## M7 学习会话与反馈
+
+从学习计划进入会话后，学习者可以按顺序阅读关联资料、使用带来源的 AI 导师、完成自适应练习，并在刷新或重启后恢复会话。导师支持提示、引导提问、例子、分步讲解和完整讲解；练习提交前会限制答案泄露，缺少有效来源时会明确提示证据不足。
+
+练习复用已审核题目和确定性评分，依据连续答对或答错调整难度，每次会话最多提交五题。完成会话时，已评分练习转为可追溯的 Learning Evidence，刷新 Mastery 并保存学习总结；重复完成不会重复写入证据。推荐在结算后刷新，若刷新失败可单独重试。
+
 ## 质量检查
 
 后端：
@@ -204,14 +224,14 @@ npm run test
 npm run build
 ```
 
-M6 阶段报告记录的最近一次回归快照：后端 `359/359`、前端 `143/143` 测试通过，Ruff、TypeScript、ESLint 和生产构建通过。该快照来自已保存的实施报告，本次文档与推送操作未重新运行测试。构建中的懒加载 vendor chunk 体积提示仍是非阻塞事项。
+M7 最终验收报告记录：后端 `410/410`、前端 `181/181` 测试通过，Ruff、TypeScript、ESLint、生产构建、迁移与隔离环境浏览器流程通过。该快照来自已保存的验收报告，本次文档与推送操作未重新运行测试。构建中的懒加载 vendor chunk 体积提示仍是非阻塞事项。
 
 ## 项目结构
 
 ```text
 learnpilot/
 ├── backend/
-│   ├── alembic/                 # 0001 → … → 0014 数据库迁移
+│   ├── alembic/                 # 0001 → … → 0018 数据库迁移
 │   ├── app/
 │   │   ├── ai/                  # provider/mock 适配与审计边界
 │   │   ├── api/                 # 课程、资料、知识模型接口
@@ -258,6 +278,8 @@ learnpilot/
 - [M6 推荐与学习计划架构](docs/architecture/M6_RECOMMENDATION_ARCHITECTURE.md)
 - [M6 实施与验收报告](docs/migration/M6_IMPLEMENTATION_REPORT.md)
 - [M6 体验完善报告](docs/migration/M6_UX_FIX_5_REPORT.md)
+- [M7 集成设计](docs/architecture/M7_INTEGRATION_DESIGN.md)
+- [M7 最终验收报告](docs/migration/M7_6_FINAL_ACCEPTANCE_REPORT.md)
 - [旧版比赛 Demo 脚本](docs/DEMO_SCRIPT.md)
 - [旧版 V0.1 验收清单](docs/V0.1_ACCEPTANCE.md)
 
@@ -269,7 +291,6 @@ learnpilot/
 - M3 的 provider 判断是受边界和来源校验约束的建议，不代表完整课程真理。
 - 知识图是辅助探索界面，不支持图编辑、坐标持久化、导出或完整键盘图遍历；层级树和知识列表提供主要的可访问浏览路径。
 - Mastery 是可解释的启发式掌握度估计，尚未进行教育测量学标定；没有已提交诊断或有效 Evidence 的课程会保持待评估状态。
-- M6 学习任务目前只展示计划，不记录执行或完成；任务时长是模板估计值。
-- M7 AI Tutor、Learning Session 和 Adaptive Practice 尚未实现。
+- 学习计划的任务时长是模板估计值；自适应练习依赖课程已有的已审核题目。
 - M8 Progress Analytics 尚未实现。
 - 当前未启用 PPTX/OCR；MySQL 8 目标部署也尚未完成正式验收。

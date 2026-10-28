@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from contextlib import nullcontext
 from datetime import datetime, timezone
 
 from pydantic import ValidationError
@@ -48,9 +49,10 @@ class MasteryService:
         user_id: int,
         course_id: int,
         knowledge_node_id: int,
+        in_transaction: bool = False,
     ) -> KnowledgeStateRefreshResultSchema:
         try:
-            with self.session.begin():
+            with nullcontext() if in_transaction else self.session.begin():
                 self._validate_target(user_id=user_id, course_id=course_id, knowledge_node_id=knowledge_node_id)
                 rows = self.evidence_repository.list_for_current_node(
                     user_id=user_id,

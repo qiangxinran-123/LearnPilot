@@ -201,6 +201,28 @@ class ExplicitMockLLMClient(LLMClient):
             }
         elif "sufficient_evidence" in fields:
             payload = {"answer": compact, "sufficient_evidence": True, "references": references[:4]}
+        elif {"answer", "mode", "citations", "insufficient_evidence"}.issubset(fields):
+            joined = "\n".join(message.get("content", "") for message in messages)
+            mode_match = re.search(r"TEACHING_MODE=([a-z_]+)", joined)
+            source_match = re.search(
+                r'<source material_id="(\d+)" reference="([^"]+)"',
+                joined,
+            )
+            payload = {
+                "answer": f"Mock tutor: {compact}",
+                "mode": mode_match.group(1) if mode_match else "guided_question",
+                "citations": (
+                    [
+                        {
+                            "material_id": int(source_match.group(1)),
+                            "source_reference": source_match.group(2),
+                        }
+                    ]
+                    if source_match
+                    else []
+                ),
+                "insufficient_evidence": source_match is None,
+            }
         else:
             payload = {
                 "overview": f"Mock summary: {compact}",

@@ -24,6 +24,12 @@ from backend.app.models.learning_plan import (
     LearningPlanStatus,
     LearningTaskType,
 )
+from backend.app.models.learning_session import (
+    LearningSessionStatus,
+    LearningSessionTaskPhase,
+    LearningSessionTaskStatus,
+    RecommendationRefreshStatus,
+)
 from backend.app.models.mastery import ConfidenceLevel, ConfidenceReasonCode, MasteryStatus
 from backend.app.models.recommendation import (
     CandidateEligibilityStatus,
@@ -34,6 +40,7 @@ from backend.app.models.recommendation import (
     RecommendationAvailabilityStatus,
     RecommendationReasonCode,
 )
+from backend.app.models.tutor import TeachingStrategy, TutorMessageRole
 
 __all__ = [
     "AssessmentStatus",
@@ -57,10 +64,16 @@ __all__ = [
     "LearningPlanLevel",
     "LearningPlanStatus",
     "LearningTaskType",
+    "LearningSessionStatus",
+    "LearningSessionTaskPhase",
+    "LearningSessionTaskStatus",
+    "RecommendationRefreshStatus",
     "MasteryStatus",
     "QuestionDifficulty",
     "QuestionType",
     "QuestionValidationStatus",
+    "TeachingStrategy",
+    "TutorMessageRole",
     "PrerequisiteEvidenceStatus",
     "PrerequisiteEvaluationStatus",
     "RecommendationAvailabilityStatus",

@@ -14,6 +14,8 @@ from backend.app.db.models.knowledge_relationship_run import KnowledgeRelationsh
 from backend.app.db.models.knowledge_source import KnowledgeSource
 from backend.app.db.models.learning_evidence import LearningEvidence
 from backend.app.db.models.learning_plan import LearningPlan
+from backend.app.db.models.learning_session import LearningSession
+from backend.app.db.models.learning_session_task_state import LearningSessionTaskState
 from backend.app.db.models.learning_task import LearningTask
 from backend.app.db.models.material import Material
 from backend.app.db.models.material_content import MaterialContent
@@ -23,6 +25,7 @@ from backend.app.db.models.question_knowledge_node import QuestionKnowledgeNode
 from backend.app.db.models.response import Response
 from backend.app.db.models.student_knowledge_state import StudentKnowledgeState
 from backend.app.db.models.study_card import StudyCard
+from backend.app.db.models.tutor_message import TutorMessage
 from backend.app.db.models.user import User
 
 __all__ = [
@@ -42,6 +45,8 @@ __all__ = [
     "KnowledgeSource",
     "LearningEvidence",
     "LearningPlan",
+    "LearningSession",
+    "LearningSessionTaskState",
     "LearningTask",
     "Material",
     "MaterialContent",
@@ -52,4 +57,5 @@ __all__ = [
     "StudyCard",
     "StudentKnowledgeState",
     "User",
+    "TutorMessage",
 ]

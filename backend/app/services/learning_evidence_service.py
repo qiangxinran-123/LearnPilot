@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+from contextlib import nullcontext
 from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
 from backend.app.db.models import Assessment, AssessmentQuestion, KnowledgeNode, LearningEvidence, Response
-from backend.app.models import AssessmentStatus, EvidenceSourceType
+from backend.app.models import AssessmentStatus, AssessmentType, EvidenceSourceType
 from backend.app.repositories import LearningEvidenceRepository
 from backend.app.schemas.diagnostic import AssessmentQuestionSnapshotSchema
 from backend.app.schemas.learning_evidence import LearningEvidenceCreateSchema
@@ -30,8 +31,8 @@ class LearningEvidenceService:
             return value
         return value.astimezone(timezone.utc).replace(tzinfo=None)
 
-    def create(self, payload: LearningEvidenceCreateSchema) -> LearningEvidence:
-        with self.session.begin():
+    def create(self, payload: LearningEvidenceCreateSchema, *, in_transaction: bool = False) -> LearningEvidence:
+        with nullcontext() if in_transaction else self.session.begin():
             assessment = self.session.get(Assessment, payload.source_assessment_id)
             if assessment is None:
                 raise LearningEvidenceError("SOURCE_ASSESSMENT_NOT_FOUND", "Source assessment was not found.")
@@ -45,8 +46,16 @@ class LearningEvidenceService:
                     "SOURCE_ASSESSMENT_NOT_SUBMITTED",
                     "Diagnostic evidence requires a submitted assessment.",
                 )
-            if payload.source_type != EvidenceSourceType.DIAGNOSTIC:
-                raise LearningEvidenceError("SOURCE_TYPE_UNSUPPORTED", "Only diagnostic evidence is writable in M5-A.")
+            expected_type = {
+                EvidenceSourceType.DIAGNOSTIC: AssessmentType.INITIAL_DIAGNOSTIC,
+                EvidenceSourceType.PRACTICE: AssessmentType.PRACTICE,
+            }.get(payload.source_type)
+            if expected_type != assessment.assessment_type:
+                raise LearningEvidenceError(
+                    "SOURCE_TYPE_UNSUPPORTED", "Evidence source must match its assessment type."
+                )
+            if payload.source_type == EvidenceSourceType.PRACTICE and not in_transaction:
+                raise LearningEvidenceError("SOURCE_TYPE_UNSUPPORTED", "Practice evidence is created by settlement.")
 
             snapshot_row = self.session.get(AssessmentQuestion, payload.source_question_snapshot_id)
             if snapshot_row is None or snapshot_row.assessment_id != assessment.id:

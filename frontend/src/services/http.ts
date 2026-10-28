@@ -84,7 +84,7 @@ export const httpClient = {
   async post<T>(
     path: string,
     payload?: unknown,
-    options?: Pick<AxiosRequestConfig, 'timeout'>,
+    options?: Pick<AxiosRequestConfig, 'headers' | 'timeout'>,
   ): Promise<T> {
     const response = await client.post<T>(path, payload, options);
     return response.data;

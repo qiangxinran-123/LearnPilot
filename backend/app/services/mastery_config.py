@@ -21,7 +21,10 @@ class MasteryAlgorithmConfig:
         }
     )
     source_weights: Mapping[EvidenceSourceType, Decimal] = field(
-        default_factory=lambda: {EvidenceSourceType.DIAGNOSTIC: Decimal("1.0")}
+        default_factory=lambda: {
+            EvidenceSourceType.DIAGNOSTIC: Decimal("1.0"),
+            EvidenceSourceType.PRACTICE: Decimal("1.0"),
+        }
     )
     high_confidence_minimum_assessments: int = 2
     high_confidence_minimum_difficulties: int = 2
