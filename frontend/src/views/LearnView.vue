@@ -145,9 +145,16 @@ onMounted(async () => {
         >继续学习</el-button
       >
     </section>
-    <p v-if="learningSession.errorMessage.value" class="session-entry-error" role="alert">
-      {{ learningSession.errorMessage.value }}
-    </p>
+    <div v-if="learningSession.errorMessage.value" class="session-entry-error" role="alert">
+      <span>{{ learningSession.errorMessage.value }}</span>
+      <el-button
+        v-if="learningSession.activeLoadFailed.value"
+        link
+        type="primary"
+        @click="learningSession.loadActive(selectedCourseId)"
+        >重试</el-button
+      >
+    </div>
 
     <LoadingBlock
       v-if="courseStore.isLoading || learningPlan.state.value === 'loading'"
@@ -273,7 +280,11 @@ onMounted(async () => {
           <el-button
             type="primary"
             :loading="learningSession.isCreating.value"
-            :disabled="learningSession.isCreating.value || learningSession.isLoading.value"
+            :disabled="
+              learningSession.isCreating.value ||
+              learningSession.isLoading.value ||
+              learningSession.activeLoadFailed.value
+            "
             @click="startOrResumeSession"
           >
             {{ learningSession.activeSession.value ? '继续学习' : '开始学习' }}

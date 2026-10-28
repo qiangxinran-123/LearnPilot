@@ -9,19 +9,27 @@ export function useLearningSession() {
   const isLoading = ref(false);
   const isCreating = ref(false);
   const errorMessage = ref('');
+  const activeLoadFailed = ref(false);
   let requestVersion = 0;
 
   async function loadActive(courseId: number | null): Promise<void> {
     const version = ++requestVersion;
     activeSession.value = null;
     errorMessage.value = '';
-    if (!courseId) return;
+    activeLoadFailed.value = false;
+    if (!courseId) {
+      isLoading.value = false;
+      return;
+    }
     isLoading.value = true;
     try {
       const response = await fetchActiveLearningSession(courseId);
       if (version === requestVersion) activeSession.value = response.session;
-    } catch (error: unknown) {
-      if (version === requestVersion) errorMessage.value = normalizeApiError(error).message;
+    } catch {
+      if (version === requestVersion) {
+        activeLoadFailed.value = true;
+        errorMessage.value = '学习会话加载失败，请重试；学习推荐仍可查看。';
+      }
     } finally {
       if (version === requestVersion) isLoading.value = false;
     }
@@ -36,12 +44,16 @@ export function useLearningSession() {
       activeSession.value = session;
       return session;
     } catch (error: unknown) {
-      errorMessage.value = normalizeApiError(error).message;
+      const apiError = normalizeApiError(error);
+      errorMessage.value =
+        apiError.status !== undefined && apiError.status >= 500
+          ? '学习会话暂时不可用，请稍后重试。'
+          : apiError.message;
       return null;
     } finally {
       isCreating.value = false;
     }
   }
 
-  return { activeSession, errorMessage, isCreating, isLoading, loadActive, start };
+  return { activeSession, activeLoadFailed, errorMessage, isCreating, isLoading, loadActive, start };
 }

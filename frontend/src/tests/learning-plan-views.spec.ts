@@ -8,6 +8,7 @@ import { fetchCourses } from '@/services/courses';
 import { fetchKnowledgeModel } from '@/services/knowledge';
 import { fetchLearningPlan, generateLearningPlan } from '@/services/learningPlans';
 import { createLearningSession, fetchActiveLearningSession } from '@/services/learningSessions';
+import { ApiError } from '@/services/http';
 import type { LearningPlanResponse } from '@/types/learningPlan';
 
 const routing = vi.hoisted(() => ({
@@ -131,6 +132,26 @@ describe('M6-4 recommendation views', () => {
     vi.mocked(fetchLearningPlan).mockResolvedValue(available);
     vi.mocked(fetchActiveLearningSession).mockResolvedValue({ session: null });
     vi.mocked(fetchKnowledgeModel).mockResolvedValue(model);
+  });
+
+  it('keeps recommendations visible and retries a failed active session lookup', async () => {
+    vi.mocked(fetchActiveLearningSession)
+      .mockRejectedValueOnce(new ApiError('Internal server error.', { status: 500 }))
+      .mockResolvedValueOnce({ session: null });
+    const wrapper = mount(LearnView, mountOptions());
+    await flushPromises();
+
+    expect(wrapper.text()).toContain('集合映射');
+    expect(wrapper.text()).toContain('学习会话加载失败');
+    expect(wrapper.text()).not.toContain('Internal server error.');
+    const start = wrapper.findAll('button').find((button) => button.text().includes('开始学习'));
+    expect(start?.attributes('disabled')).toBeDefined();
+    const retry = wrapper.findAll('button').find((button) => button.text().includes('重试'));
+    await retry?.trigger('click');
+    await flushPromises();
+    expect(fetchActiveLearningSession).toHaveBeenCalledTimes(2);
+    expect(wrapper.text()).not.toContain('学习会话加载失败');
+    expect(start?.attributes('disabled')).toBeUndefined();
   });
 
   it('creates one session from the recommendation and protects repeated clicks', async () => {
