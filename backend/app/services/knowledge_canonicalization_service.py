@@ -289,10 +289,13 @@ class KnowledgeCanonicalizationService:
                 "KNOWLEDGE_CANONICALIZATION_NOT_READY",
                 "The current extraction runs do not contain knowledge candidates.",
             )
-        if len(candidates) > self.settings.knowledge_canonicalization_max_candidates:
+        # Bound raw source and resolution work independently from the distinct
+        # concepts sent to semantic blocking. Exact duplicates retain all sources.
+        limit = self.settings.knowledge_canonicalization_max_candidates
+        if len(candidates) > limit * 2 or len({normalize_knowledge_name(item.name) for item in candidates}) > limit:
             raise KnowledgeCanonicalizationError(
                 "KNOWLEDGE_CANONICALIZATION_NOT_READY",
-                "The course exceeds the configured canonicalization candidate limit.",
+                "当前课程资料规模超过单次知识结构构建能力，请缩小课程资料范围后重试。",
             )
 
         run_by_id = {run.id: run for run in runs}

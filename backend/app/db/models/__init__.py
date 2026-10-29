@@ -17,6 +17,7 @@ from backend.app.db.models.learning_plan import LearningPlan
 from backend.app.db.models.learning_session import LearningSession
 from backend.app.db.models.learning_session_task_state import LearningSessionTaskState
 from backend.app.db.models.learning_task import LearningTask
+from backend.app.db.models.mastery_history import MasteryHistory
 from backend.app.db.models.material import Material
 from backend.app.db.models.material_content import MaterialContent
 from backend.app.db.models.material_summary import MaterialSummary
@@ -48,6 +49,7 @@ __all__ = [
     "LearningSession",
     "LearningSessionTaskState",
     "LearningTask",
+    "MasteryHistory",
     "Material",
     "MaterialContent",
     "MaterialSummary",

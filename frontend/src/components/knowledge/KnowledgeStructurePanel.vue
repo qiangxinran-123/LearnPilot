@@ -93,6 +93,18 @@ const prerequisiteCount = computed(
   () => props.model?.edges.filter((edge) => edge.relation_type === 'prerequisite').length ?? 0,
 );
 const buildPresentation = computed(() => (props.status ? presentBuildStatus(props.status) : null));
+const emptyMapMessage = computed(() => {
+  switch (props.status?.state) {
+    case 'no_materials': return '当前课程尚未上传资料，请先上传可解析资料。';
+    case 'not_ready': return '课程资料尚未成功解析，请检查资料解析状态。';
+    case 'running': return '知识结构正在生成，完成后将在这里显示。';
+    case 'failed': return '本次构建未成功，尚无可展示的已确认知识点，请参考上方原因后重试。';
+    case 'update_failed': return '本次更新未成功，尚无可展示的已确认知识点。';
+    case 'ready': return '构建已完成，但没有可展示的已确认知识点。';
+    case 'not_built': return '当前课程暂无已确认的知识点，资料已就绪，尚未生成知识结构。';
+    default: return '当前课程暂无已确认的知识点。';
+  }
+});
 const detailRoute = computed(() => ({
   name: 'knowledge-detail',
   params: { courseId: props.courseId, nodeId: focusNodeId.value },
@@ -274,7 +286,7 @@ onBeforeUnmount(() => {
       <el-button @click="emit('retry')">重试</el-button>
     </div>
     <div v-else-if="!hasNodes" class="knowledge-map__message">
-      <p>当前课程暂无已确认的知识点。请先上传可解析资料，再主动生成知识结构。</p>
+      <p>{{ emptyMapMessage }}</p>
     </div>
 
     <template v-else-if="model && treeData && focusData.focusNode">

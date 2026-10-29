@@ -6,6 +6,7 @@ import {
   startKnowledgeBuild,
 } from '@/services/knowledge';
 import { normalizeApiError } from '@/services/http';
+import { safeBuildError } from '@/components/knowledge/buildStatus';
 import type { KnowledgeBuildStatus, KnowledgeModelResponse } from '@/types/knowledge';
 
 type LoadState = 'loading' | 'ready' | 'error';
@@ -99,7 +100,7 @@ export function useCourseKnowledgeWorkspace(courseId: Ref<number>) {
       return true;
     } catch (error: unknown) {
       if (!disposed && epoch === lifecycle) {
-        buildError.value = normalizeApiError(error).message;
+        buildError.value = safeBuildError(normalizeApiError(error).message, '无法启动知识结构构建，请稍后重试。');
         await refreshStatus(epoch);
       }
       return false;

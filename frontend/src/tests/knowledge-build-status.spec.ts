@@ -69,7 +69,8 @@ describe('presentBuildStatus', () => {
   it('does not claim success for a ready state with zero canonical nodes', () => {
     const presentation = presentBuildStatus(status('ready'));
 
-    expect(presentation.title).toBe('尚未生成知识结构');
+    expect(presentation.title).toBe('生成完成但没有知识点');
+    expect(presentation.detail).toContain('未产生可展示');
     expect(presentation.action).toBe('生成课程知识结构');
   });
 
@@ -83,8 +84,26 @@ describe('presentBuildStatus', () => {
       }),
     );
 
-    expect(presentation.detail).toBe('关系推断失败');
+    expect(presentation.detail).toContain('关系推断失败');
+    expect(presentation.detail).toContain('已有知识结构仍可查看');
     expect(presentation.action).toBeNull();
     expect(presentation.title).toBe('最近一次更新失败');
+  });
+});
+
+
+describe('safe build failure messages', () => {
+  it('translates the previous stored candidate-limit error', () => {
+    const presentation = presentBuildStatus(status('failed', {
+      error_message: 'The course exceeds the configured canonicalization candidate limit.',
+    }));
+    expect(presentation.detail).toContain('资料规模超过单次知识结构构建能力');
+    expect(presentation.detail).not.toContain('configured');
+  });
+  it('does not expose unknown internal exception messages', () => {
+    const presentation = presentBuildStatus(status('failed', {
+      error_message: 'Traceback: internal implementation detail',
+    }));
+    expect(presentation.detail).toBe('知识结构构建未成功，请检查资料后重试。');
   });
 });

@@ -255,6 +255,40 @@ describe('KnowledgeStructurePanel', () => {
     expect(wrapper.text()).toContain('生成课程知识结构');
   });
 
+  it.each([
+    ['no_materials', '尚未上传资料'],
+    ['not_ready', '尚未成功解析'],
+    ['not_built', '尚未生成知识结构'],
+    ['running', '知识结构正在生成'],
+    ['failed', '本次构建未成功'],
+    ['ready', '构建已完成，但没有'],
+  ] as const)('shows the correct empty map state for %s', async (state, expected) => {
+    const { wrapper } = await mountPanel({
+      model: { ...baseModel, nodes: [], edges: [] },
+      status: { ...baseStatus, state, node_count: 0, has_model: false,
+        error_message: state === 'failed' ? 'The course exceeds the configured canonicalization candidate limit.' : null },
+      isRunning: state === 'running',
+    });
+    expect(wrapper.text()).toContain(expected);
+    if (state === 'failed') {
+      expect(wrapper.text()).toContain('资料规模超过单次知识结构构建能力');
+      expect(wrapper.text()).not.toContain('请先上传');
+      expect(wrapper.text()).not.toContain('configured');
+      await wrapper.findAll('button').find((button) => button.text().includes('重试生成'))?.trigger('click');
+      expect(wrapper.emitted('build')).toHaveLength(1);
+    }
+  });
+
+  it('keeps a previously confirmed map visible when an update fails', async () => {
+    const { wrapper } = await mountPanel({
+      status: { ...baseStatus, state: 'update_failed', has_model: true,
+        error_message: 'The course exceeds the configured canonicalization candidate limit.' },
+    });
+    expect(wrapper.text()).toContain('已有知识结构仍可查看');
+    expect(wrapper.text()).toContain('向量');
+    expect(wrapper.text()).not.toContain('请先上传');
+  });
+
   it('shows a recoverable loading error when the model request fails', async () => {
     const { wrapper } = await mountPanel({
       model: null,

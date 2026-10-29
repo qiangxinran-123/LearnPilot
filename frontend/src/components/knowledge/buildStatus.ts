@@ -14,6 +14,16 @@ const stageLabels: Record<KnowledgeBuildStage, string> = {
   relationships: '正在建立知识关系',
 };
 
+const LEGACY_CANDIDATE_LIMIT = 'The course exceeds the configured canonicalization candidate limit.';
+const LIMIT_MESSAGE = '当前课程资料规模超过单次知识结构构建能力，请缩小课程资料范围后重试。';
+
+/** Do not expose internal English exceptions or stack traces in the build UI. */
+export function safeBuildError(message: string | null | undefined, fallback: string): string {
+  if (message === LEGACY_CANDIDATE_LIMIT) return LIMIT_MESSAGE;
+  if (message && message.length <= 160 && /^[\u3400-\u9fff0-9，。！？、；：‘’“”（）《》\s]+$/.test(message)) return message;
+  return fallback;
+}
+
 export function presentBuildStatus(status: KnowledgeBuildStatus): BuildPresentation {
   switch (status.state) {
     case 'no_materials':
@@ -53,8 +63,8 @@ export function presentBuildStatus(status: KnowledgeBuildStatus): BuildPresentat
             action: null,
           }
         : {
-            title: '尚未生成知识结构',
-            detail: '当前没有可展示的正式知识点。',
+            title: '生成完成但没有知识点',
+            detail: '本次构建未产生可展示的正式知识点。',
             tone: 'warning',
             action: status.can_build ? '生成课程知识结构' : null,
           };
@@ -68,14 +78,14 @@ export function presentBuildStatus(status: KnowledgeBuildStatus): BuildPresentat
     case 'failed':
       return {
         title: '最近一次构建失败',
-        detail: status.error_message || '原有数据未被当作成功结果，请检查后重试。',
+        detail: safeBuildError(status.error_message, '知识结构构建未成功，请检查资料后重试。'),
         tone: 'error',
         action: status.can_build ? '重试生成' : null,
       };
     case 'update_failed':
       return {
         title: '最近一次更新失败',
-        detail: status.error_message || '旧版知识结构仍可使用，可安全重试更新。',
+        detail: `${safeBuildError(status.error_message, '知识结构更新未成功。')} 已有知识结构仍可查看。`,
         tone: 'error',
         action: status.can_build ? '重试更新' : null,
       };

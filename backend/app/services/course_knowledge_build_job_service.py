@@ -170,6 +170,16 @@ class CourseKnowledgeBuildJobService:
                 display_state = "update_failed" if has_model else "failed"
             elif has_model:
                 display_state = "update_available" if needs_update else "ready"
+            elif (
+                state is not None
+                and state.status == "success"
+                and ready
+                and state.success_material_snapshot_hash == current_snapshot
+                and not canonical_ids
+            ):
+                # A completed build with no published nodes is distinct from
+                # a course which has never been built.
+                display_state = "ready"
             elif not materials:
                 display_state = "no_materials"
             elif not ready:

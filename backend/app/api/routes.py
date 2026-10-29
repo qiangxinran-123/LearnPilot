@@ -7,6 +7,7 @@ from backend.app.api.learning_plans import router as learning_plans_router
 from backend.app.api.learning_sessions import router as learning_sessions_router
 from backend.app.api.mastery import router as mastery_router
 from backend.app.api.materials import router as materials_router
+from backend.app.api.progress import router as progress_router
 from backend.app.core.config import APP_NAME, APP_VERSION
 
 router = APIRouter()
@@ -15,6 +16,7 @@ router.include_router(materials_router)
 router.include_router(knowledge_router)
 router.include_router(diagnostics_router)
 router.include_router(mastery_router)
+router.include_router(progress_router)
 router.include_router(learning_plans_router)
 router.include_router(learning_sessions_router)
 

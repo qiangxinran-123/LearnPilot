@@ -5,10 +5,11 @@ from contextlib import nullcontext
 from datetime import datetime, timezone
 
 from pydantic import ValidationError
+from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from backend.app.db.models import Course, KnowledgeNode, StudentKnowledgeState
+from backend.app.db.models import Course, KnowledgeNode, MasteryHistory, StudentKnowledgeState
 from backend.app.repositories import LearningEvidenceRepository, StudentKnowledgeStateRepository
 from backend.app.schemas.mastery import (
     KnowledgeStateRefreshResultSchema,
@@ -17,8 +18,10 @@ from backend.app.schemas.mastery import (
 )
 from backend.app.services.confidence_estimator import ConfidenceEstimator
 from backend.app.services.evidence_fingerprint import calculate_evidence_fingerprint
+from backend.app.services.knowledge_graph_fingerprint import knowledge_graph_fingerprint
 from backend.app.services.mastery_calculator import MasteryCalculationError, MasteryCalculator
 from backend.app.services.mastery_config import MASTERY_V1_CONFIG, MasteryAlgorithmConfig
+from backend.app.services.mastery_read_service import is_persisted_mastery_state_current
 
 
 class MasteryServiceError(ValueError):
@@ -109,6 +112,38 @@ class MasteryService:
                 state.evidence_fingerprint = fingerprint
                 state.calculated_at = self.clock()
                 self.state_repository.save(state)
+                verified_rows = self.evidence_repository.list_submitted_for_current_nodes(
+                    user_id=user_id, course_id=course_id, knowledge_node_ids=[knowledge_node_id]
+                )
+                if (
+                    evidence
+                    and is_persisted_mastery_state_current(node_id=knowledge_node_id, state=state, rows=verified_rows)
+                    and self.session.scalar(
+                        select(MasteryHistory.id).where(
+                            MasteryHistory.user_id == user_id,
+                            MasteryHistory.course_id == course_id,
+                            MasteryHistory.knowledge_node_id == knowledge_node_id,
+                            MasteryHistory.algorithm_version == state.algorithm_version,
+                            MasteryHistory.evidence_fingerprint == fingerprint,
+                        )
+                    )
+                    is None
+                ):
+                    self.session.add(
+                        MasteryHistory(
+                            user_id=user_id,
+                            course_id=course_id,
+                            knowledge_node_id=knowledge_node_id,
+                            mastery_score=state.mastery_score,
+                            mastery_status=state.mastery_status.value,
+                            confidence_level=state.confidence_level.value,
+                            evidence_fingerprint=fingerprint,
+                            algorithm_version=state.algorithm_version,
+                            graph_fingerprint=knowledge_graph_fingerprint(self.session, course_id),
+                            recorded_at=state.calculated_at,
+                        )
+                    )
+                    self.session.flush()
                 return KnowledgeStateRefreshResultSchema(
                     state=StudentKnowledgeStateSchema.model_validate(state),
                     updated=True,
