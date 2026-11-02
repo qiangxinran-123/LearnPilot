@@ -307,6 +307,8 @@ watch(
             :model="knowledge.model.value"
             :model-state="knowledge.modelState.value"
             :model-error="knowledge.modelError.value"
+            :build-error="knowledge.buildError.value"
+            :status-error="knowledge.statusError.value"
             :status="knowledge.status.value"
             :is-running="knowledge.isRunning.value"
             @retry="knowledge.refreshModel()"

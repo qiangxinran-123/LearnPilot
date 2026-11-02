@@ -11,6 +11,7 @@ from backend.app.schemas.learning_session import (
     LearningSessionCreate,
     LearningSessionRead,
     LearningSessionTaskUpdate,
+    SessionContinuationResponse,
 )
 from backend.app.schemas.practice import PracticeAnswerCreate, PracticeRead
 from backend.app.schemas.tutor import (
@@ -171,6 +172,18 @@ def get_learning_session_content(
         return service.get_for_configured_user(session_id=session_id, phase=phase, query=q)
     except LearningContentError as error:
         raise _content_api_error(error) from error
+
+
+@router.get("/{session_id}/continuation", response_model=SessionContinuationResponse)
+def get_session_continuation(
+    session_id: int,
+    exclude_node_id: list[int] = Query(default=[]),
+    service: LearningSessionService = Depends(get_learning_session_service),
+) -> SessionContinuationResponse:
+    try:
+        return service.continuation_for_configured_user(session_id, set(exclude_node_id))
+    except LearningSessionError as error:
+        raise _api_error(error) from error
 
 
 @router.post("/{session_id}/practice/next", response_model=PracticeRead)

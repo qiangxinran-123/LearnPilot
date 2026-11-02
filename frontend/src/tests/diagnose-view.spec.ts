@@ -1,6 +1,7 @@
 import { defineComponent } from 'vue';
 import { flushPromises, mount } from '@vue/test-utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { ElSelect } from 'element-plus';
 
 import DiagnoseView from '@/views/DiagnoseView.vue';
 import { fetchCourses } from '@/services/courses';
@@ -62,8 +63,8 @@ describe('DiagnoseView', () => {
     const wrapper = mount(DiagnoseView);
     await flushPromises();
     expect(wrapper.text()).toContain('离散数学 题库状态');
-    const target = wrapper.findAll('.course-list button').find((item) => item.text().includes('计算机系统'));
-    await target?.trigger('click');
+    wrapper.findComponent(ElSelect).vm.$emit('update:modelValue', 4);
+    await flushPromises();
     expect(wrapper.text()).toContain('计算机系统 题库状态');
     expect(wrapper.text()).not.toContain('离散数学 题库状态');
   });
@@ -116,4 +117,25 @@ describe('DiagnoseView', () => {
     expect(wrapper.text()).toContain('诊断草稿已保存');
     expect(wrapper.text()).toContain('继续作答');
   });
+
+  it('shows only submitted diagnoses for the selected course while keeping drafts resumable', async () => {
+    const common = { question_count: 8, answered_count: 8, correct_questions: 6, accuracy: 0.75,
+      created_at: '2026-10-17T10:00:00Z', submitted_at: '2026-10-17T11:00:00Z' };
+    vi.mocked(fetchCourses).mockResolvedValue({ count: 2, courses: [course, { id: 4, name: '计算机系统', description: '' }] });
+    vi.mocked(fetchAssessments).mockResolvedValue({ count: 3, assessments: [
+      { ...common, id: 10, course_id: 3, course_name: course.name, status: 'submitted' },
+      { ...common, id: 11, course_id: 3, course_name: course.name, status: 'in_progress', submitted_at: null },
+      { ...common, id: 12, course_id: 4, course_name: '计算机系统', status: 'submitted' },
+    ] });
+    const wrapper = mount(DiagnoseView);
+    await flushPromises();
+    expect(wrapper.findAll('.history-row')).toHaveLength(1);
+    expect(wrapper.find('.history-row').text()).toContain('离散数学');
+    expect(wrapper.text()).toContain('诊断草稿已保存');
+    wrapper.findComponent(ElSelect).vm.$emit('update:modelValue', 4);
+    await flushPromises();
+    expect(wrapper.findAll('.history-row')).toHaveLength(1);
+    expect(wrapper.find('.history-row').text()).toContain('计算机系统');
+  });
+
 });

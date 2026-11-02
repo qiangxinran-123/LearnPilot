@@ -189,6 +189,17 @@ async function mountPanel(
 }
 
 describe('KnowledgeStructurePanel', () => {
+  it('shows start and polling failures while preserving the existing graph', async () => {
+    const { wrapper } = await mountPanel();
+    await wrapper.setProps({ buildError: '请求超时，请稍后重试。', statusError: '无法连接到服务。', isRunning: true });
+    expect(wrapper.text()).toContain('请求超时');
+    expect(wrapper.text()).toContain('状态暂时无法更新');
+    expect(wrapper.text()).toContain('系统会继续尝试');
+    expect(wrapper.text()).toContain('向量');
+    const button = wrapper.findAll('button').find((item) => item.text().includes('正在生成'));
+    expect(button?.attributes('disabled')).toBeDefined();
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     const services = mockedServices();

@@ -37,7 +37,7 @@ class KnowledgeCandidate(Base):
             name="uq_knowledge_candidates_run_normalized_name",
         ),
         UniqueConstraint("id", "material_id", name="uq_knowledge_candidates_id_material"),
-        UniqueConstraint("id", "course_id", name="uq_knowledge_candidates_id_course"),
+        Index("uq_knowledge_candidates_id_course", "id", "course_id", unique=True),
         Index("ix_knowledge_candidates_course_material", "course_id", "material_id"),
     )
 

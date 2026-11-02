@@ -50,6 +50,7 @@ export interface LearningSession {
   status: LearningSessionStatus;
   session_contract_version: string;
   completion_summary: SettlementSummary | null;
+  practice_attempts?: PracticeAttempt[] | null;
   recommendation_refresh_status: RecommendationRefreshStatus;
   tasks: LearningSessionTask[];
   started_at: string | null;
@@ -58,6 +59,12 @@ export interface LearningSession {
   created_at: string;
   updated_at: string;
   reused: boolean;
+}
+
+export interface SessionContinuation {
+  knowledge_node_id: number;
+  title: string;
+  reason_codes: RecommendationReasonCode[];
 }
 
 export interface ActiveLearningSessionResponse {

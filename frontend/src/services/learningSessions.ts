@@ -7,6 +7,7 @@ import type {
   LearningSessionCreateRequest,
   LearningSessionTaskPhase,
   LearningSessionTaskStatus,
+  SessionContinuation,
   TutorExchange,
   TutorMessageCreateRequest,
   TutorMessageList,
@@ -26,6 +27,12 @@ export function fetchActiveLearningSession(courseId: number) {
 
 export function fetchLearningSession(sessionId: number) {
   return httpClient.get<LearningSession>(`${basePath}/${sessionId}`);
+}
+
+export function fetchSessionContinuation(sessionId: number, excluded: number[]) {
+  const params = new URLSearchParams();
+  excluded.forEach((id) => params.append('exclude_node_id', String(id)));
+  return httpClient.get<{ recommendation: SessionContinuation | null }>(`${basePath}/${sessionId}/continuation`, { params });
 }
 
 export function fetchLearningSessionContent(

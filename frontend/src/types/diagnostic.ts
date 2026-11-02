@@ -13,6 +13,7 @@ export interface QuestionBankNode {
 export interface QuestionBankReadiness {
   course_id: number;
   validated_count: number;
+  available_questions: number;
   pending_count: number;
   rejected_count: number;
   covered_core_nodes: number;
@@ -76,6 +77,11 @@ export interface CourseQuestionPreparationResponse {
   pending_review_count: number;
   questions: QuestionBankItem[];
   failures: CourseQuestionPreparationFailure[];
+}
+
+export interface QuestionReviewEligibility {
+  eligible_ids: number[];
+  needs_review_count: number;
 }
 
 export interface QuestionReviewResponse {

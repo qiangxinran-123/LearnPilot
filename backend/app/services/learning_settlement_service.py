@@ -9,7 +9,7 @@ from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 
 from backend.app.core.settings import Settings, get_settings
-from backend.app.db.models import Assessment, Course, KnowledgeNode, LearningSession
+from backend.app.db.models import Assessment, AssessmentQuestion, Course, KnowledgeNode, LearningSession
 from backend.app.db.session import get_db
 from backend.app.models import (
     AssessmentStatus,
@@ -20,6 +20,7 @@ from backend.app.models import (
 )
 from backend.app.repositories import LearningEvidenceRepository, StudentKnowledgeStateRepository, UserRepository
 from backend.app.repositories.learning_session_repository import LearningSessionRepository
+from backend.app.schemas.diagnostic import AssessmentQuestionSnapshotSchema
 from backend.app.services.diagnostic_evidence_ingestion import DiagnosticEvidenceExtractor
 from backend.app.services.learning_evidence_service import LearningEvidenceService
 from backend.app.services.learning_plan_service import LearningPlanService
@@ -116,6 +117,7 @@ class LearningSettlementService:
                             else None
                         )
                     evidence_ids = []
+                    changed_nodes: set[int] = set()
                     for candidate in plan.candidates:
                         existing = self.evidence.get_by_identity(
                             source_type=candidate.source_type,
@@ -131,10 +133,42 @@ class LearningSettlementService:
                             or existing.attribution_weight != candidate.attribution_weight
                         ):
                             raise LearningSessionError("PRACTICE_SCOPE_MISMATCH", "Conflicting practice evidence.")
-                        row = existing or LearningEvidenceService(self.session).create(candidate, in_transaction=True)
+                        if existing is not None:
+                            evidence_ids.append(existing.id)
+                            continue
+                        snapshot_row = self.session.get(AssessmentQuestion, candidate.source_question_snapshot_id)
+                        snapshot = AssessmentQuestionSnapshotSchema.model_validate(snapshot_row.question_snapshot)
+                        if self.evidence.has_source_question_evidence(
+                            user_id=user_id,
+                            course_id=item.course_id,
+                            source_question_id=snapshot.source_question_id,
+                            source_question_version=snapshot.source_question_version,
+                            historical_knowledge_node_ref=candidate.historical_knowledge_node_ref,
+                        ):
+                            continue
+                        row = LearningEvidenceService(self.session).create(candidate, in_transaction=True)
                         evidence_ids.append(row.id)
+                        if candidate.current_knowledge_node_id is not None:
+                            changed_nodes.add(candidate.current_knowledge_node_id)
                     changes = []
                     for node_id in node_ids:
+                        # A practice-only replay must not refresh stale historical mastery.
+                        if node_id not in changed_nodes:
+                            state = self.states.get(
+                                user_id=user_id, course_id=item.course_id, knowledge_node_id=node_id
+                            )
+                            if state is not None and before[node_id] is not None:
+                                changes.append(
+                                    {
+                                        "knowledge_node_id": node_id,
+                                        "before": before[node_id],
+                                        "after": before[node_id],
+                                        "delta": 0,
+                                        "confidence": state.confidence_level.value,
+                                        "calculated_at": state.calculated_at.isoformat(),
+                                    }
+                                )
+                            continue
                         result = (
                             MasteryService(self.session)
                             .refresh_state(

@@ -3,7 +3,7 @@ from __future__ import annotations
 from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
-from backend.app.db.models import Assessment, LearningEvidence, Response
+from backend.app.db.models import Assessment, AssessmentQuestion, LearningEvidence, Response
 from backend.app.models import AssessmentStatus, AssessmentType, EvidenceSourceType
 
 
@@ -34,6 +34,30 @@ class LearningEvidenceRepository:
             LearningEvidence.evidence_schema_version == evidence_schema_version,
         )
         return self.session.scalar(statement)
+
+    def has_source_question_evidence(
+        self,
+        *,
+        user_id: int,
+        course_id: int,
+        source_question_id: int,
+        source_question_version: int,
+        historical_knowledge_node_ref: int,
+    ) -> bool:
+        # Immutable snapshot identity survives a deleted or edited source question.
+        statement = (
+            select(LearningEvidence.id)
+            .join(AssessmentQuestion, AssessmentQuestion.id == LearningEvidence.source_question_snapshot_id)
+            .where(
+                LearningEvidence.user_id == user_id,
+                LearningEvidence.course_id == course_id,
+                LearningEvidence.historical_knowledge_node_ref == historical_knowledge_node_ref,
+                AssessmentQuestion.question_snapshot["source_question_id"].as_integer() == source_question_id,
+                AssessmentQuestion.question_snapshot["source_question_version"].as_integer() == source_question_version,
+            )
+            .limit(1)
+        )
+        return self.session.scalar(statement) is not None
 
     def list_by_source(self, source_type: EvidenceSourceType, source_assessment_id: int) -> list[LearningEvidence]:
         statement = (

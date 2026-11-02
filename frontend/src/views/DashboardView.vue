@@ -54,8 +54,8 @@ onMounted(async () => {
 <template>
   <section class="page-view dashboard-view">
     <PageHeader
-      title="今天，从最值得学习的内容开始。"
-      description="学习建议来自课程知识结构、已保存的掌握状态与真实诊断依据。"
+      title="今天学什么？"
+      description="选择课程，查看下一步学习建议。"
     />
 
     <LoadingBlock v-if="courseStore.isLoading" :count="2" />
@@ -80,8 +80,8 @@ onMounted(async () => {
       <section class="recommendation-section" aria-labelledby="dashboard-recommendation-title">
         <header class="recommendation-section__header">
           <div>
-            <p class="eyebrow">NEXT STEP</p>
-            <h2 id="dashboard-recommendation-title">下一步，建议学习什么？</h2>
+            <h2 id="dashboard-recommendation-title">下一步学习</h2>
+            <p class="course-selector-label">当前课程</p>
           </div>
           <el-select
             v-model="selectedCourseId"
@@ -182,7 +182,7 @@ onMounted(async () => {
 
 <style scoped>
 .recommendation-section {
-  margin-bottom: 36px;
+  margin-bottom: 24px;
 }
 .recommendation-section__header {
   display: flex;
@@ -204,6 +204,7 @@ onMounted(async () => {
   font-weight: 750;
   letter-spacing: 0.14em;
 }
+.course-selector-label { margin: 0; color: var(--lp-text-secondary); font-size: 12px; }
 .dashboard-course-select {
   width: min(280px, 100%);
 }
@@ -269,7 +270,7 @@ onMounted(async () => {
   color: var(--lp-danger) !important;
 }
 .dashboard-view__courses {
-  margin-top: 34px;
+  margin-top: 24px;
 }
 .section-heading {
   display: flex;
@@ -290,7 +291,8 @@ onMounted(async () => {
     align-items: stretch;
     flex-direction: column;
   }
-  .dashboard-course-select {
+  .course-selector-label { margin: 0; color: var(--lp-text-secondary); font-size: 12px; }
+.dashboard-course-select {
     width: 100%;
   }
   .recommendation-card,

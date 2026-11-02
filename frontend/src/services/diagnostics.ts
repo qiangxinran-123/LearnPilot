@@ -9,6 +9,7 @@ import type {
   DiagnosticResult,
   QuestionBankListResponse,
   QuestionBankReadiness,
+  QuestionReviewEligibility,
   QuestionReviewResponse,
   QuestionValidationStatus,
   SavedResponse,
@@ -47,6 +48,10 @@ export function prepareCourseDiagnosticQuestions(
   return httpClient.post<CourseQuestionPreparationResponse>(
     `/diagnostics/courses/${courseId}/questions/prepare`,
   );
+}
+
+export function fetchQuestionReviewEligibility(courseId: number): Promise<QuestionReviewEligibility> {
+  return httpClient.get<QuestionReviewEligibility>(`/diagnostics/courses/${courseId}/questions/review-eligibility`);
 }
 
 export function approveDiagnosticQuestion(

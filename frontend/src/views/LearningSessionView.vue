@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
-import { ArrowLeft, CircleCheck, Clock, Lock } from '@element-plus/icons-vue';
+import { ArrowLeft } from '@element-plus/icons-vue';
 import { useRoute, useRouter } from 'vue-router';
 
 import ErrorState from '@/components/feedback/ErrorState.vue';
@@ -12,14 +12,16 @@ import { useLearningContent } from '@/composables/useLearningContent';
 import {
   cancelLearningSession,
   completeLearningSession,
+  createLearningSession,
   fetchLearningSession,
+  fetchSessionContinuation,
   updateLearningSessionTask,
 } from '@/services/learningSessions';
 import { normalizeApiError } from '@/services/http';
 import type {
   LearningSession,
-  LearningSessionTask,
-  LearningSessionTaskStatus,
+  PracticeAttempt,
+  SessionContinuation,
   TeachingStrategy,
 } from '@/types/learningSession';
 
@@ -30,10 +32,16 @@ const isLoading = ref(true);
 const pendingTaskId = ref<number | null>(null);
 const isCancelling = ref(false);
 const isSettling = ref(false);
+const isStartingNext = ref(false);
 const errorMessage = ref('');
 const actionError = ref('');
 const learningContent = useLearningContent();
 const tutorPanel = ref<InstanceType<typeof TutorPanel> | null>(null);
+const step = ref<'concept' | 'practice'>('concept');
+const attempts = ref<PracticeAttempt[]>([]);
+const continuation = ref<SessionContinuation | null>(null);
+const continuationLoading = ref(false);
+const continuationError = ref('');
 let loadVersion = 0;
 
 const sessionId = computed(() => {
@@ -42,53 +50,24 @@ const sessionId = computed(() => {
   );
   return Number.isInteger(value) && value > 0 ? value : null;
 });
+const completedTargets = computed(() => {
+  const raw = Array.isArray(route.query?.completed) ? route.query.completed[0] : route.query?.completed;
+  return typeof raw === 'string' ? raw.split(',').map(Number).filter((id) => Number.isSafeInteger(id) && id > 0) : [];
+});
 const canWrite = computed(
   () => session.value?.status === 'created' || session.value?.status === 'in_progress',
 );
-const completedCount = computed(
-  () => session.value?.tasks.filter((task) => task.status === 'completed').length ?? 0,
-);
 
-const phaseCopy = {
-  concept_learning: {
-    title: '概念理解',
-    description: '阅读下方经过课程与知识点范围校验的真实资料片段。',
-  },
-  guided_example: {
-    title: '示例讲解',
-    description: '可继续使用当前资料理解案例；引导式讲解将在 M7-3 接入。',
-  },
-  adaptive_practice: {
-    title: '针对练习',
-    description: '使用当前知识点的已验证题库练习，系统会根据连续作答表现调整难度。',
-  },
-} as const;
-
-function taskLabel(status: LearningSessionTaskStatus): string {
-  if (status === 'completed') return '已完成';
-  if (status === 'in_progress') return '进行中';
-  return '未开始';
-}
-function previousComplete(task: LearningSessionTask): boolean {
-  return (
-    session.value?.tasks
-      .filter((item) => item.order_index < task.order_index)
-      .every((item) => item.status === 'completed') ?? false
-  );
-}
-function nextStatus(task: LearningSessionTask): LearningSessionTaskStatus | null {
-  if (task.phase === 'adaptive_practice' || task.status === 'completed') return null;
-  return task.status === 'not_started' ? 'in_progress' : 'completed';
-}
-function actionLabel(task: LearningSessionTask): string {
-  return task.status === 'not_started' ? '开始本阶段' : '保存为已完成';
-}
+const conceptDone = computed(() => session.value?.tasks.filter((task) => task.phase !== 'adaptive_practice').every((task) => task.status === 'completed') ?? false);
+const practiceDone = computed(() => session.value?.tasks.find((task) => task.phase === 'adaptive_practice')?.status === 'completed');
 
 async function load(): Promise<void> {
   const version = ++loadVersion;
   errorMessage.value = '';
   actionError.value = '';
   session.value = null;
+  attempts.value = [];
+  continuation.value = null;
   learningContent.clear();
   if (!sessionId.value) {
     errorMessage.value = '学习会话地址无效，请返回学习计划重新进入。';
@@ -100,7 +79,10 @@ async function load(): Promise<void> {
     const loaded = await fetchLearningSession(sessionId.value);
     if (version !== loadVersion) return;
     session.value = loaded;
+    attempts.value = loaded.practice_attempts ?? [];
+    step.value = loaded.tasks.filter((task) => task.phase !== 'adaptive_practice').every((task) => task.status === 'completed') ? 'practice' : 'concept';
     await learningContent.load(loaded.session_id);
+    if (loaded.status === 'completed') void loadContinuation(loaded.session_id);
   } catch (error: unknown) {
     if (version === loadVersion) errorMessage.value = normalizeApiError(error).message;
   } finally {
@@ -117,13 +99,20 @@ function openMaterial(materialId: number): void {
     params: { courseId: session.value.course_id, materialId },
   });
 }
-async function updateTask(task: LearningSessionTask): Promise<void> {
-  const status = nextStatus(task);
-  if (!session.value || !status || pendingTaskId.value !== null) return;
-  pendingTaskId.value = task.task_id;
+async function startPractice(): Promise<void> {
+  if (!session.value || pendingTaskId.value !== null) return;
+  pendingTaskId.value = -1;
   actionError.value = '';
   try {
-    session.value = await updateLearningSessionTask(session.value.session_id, task.phase, status);
+    for (const phase of ['concept_learning', 'guided_example'] as const) {
+      let task = session.value.tasks.find((item) => item.phase === phase);
+      if (task?.status === 'not_started') {
+        session.value = await updateLearningSessionTask(session.value.session_id, phase, 'in_progress');
+        task = session.value.tasks.find((item) => item.phase === phase);
+      }
+      if (task?.status === 'in_progress') session.value = await updateLearningSessionTask(session.value.session_id, phase, 'completed');
+    }
+    step.value = 'practice';
   } catch (error: unknown) {
     actionError.value = normalizeApiError(error).message;
   } finally {
@@ -144,7 +133,43 @@ function askTutor(request: { message: string; mode: TeachingStrategy }): void {
   tutorPanel.value?.prepareQuestion(request.message, request.mode);
 }
 function backToLearn(): void {
-  void router.push({ name: 'learn', query: { courseId: String(session.value?.course_id ?? '') } });
+  const query: Record<string, string> = { courseId: String(session.value?.course_id ?? '') };
+  if (canWrite.value && completedTargets.value.length && session.value) {
+    query.completed = completedTargets.value.join(',');
+    query.flowSession = String(session.value.session_id);
+  }
+  if (session.value?.status === 'completed') {
+    query.finishedNode = String(session.value.target_knowledge_node_id);
+  }
+  void router.push({ name: 'learn', query });
+}
+async function startNext(): Promise<void> {
+  const current = session.value;
+  const recommendation = continuation.value;
+  if (!current || !recommendation || recommendation.knowledge_node_id === current.target_knowledge_node_id || isStartingNext.value) return;
+  isStartingNext.value = true;
+  actionError.value = '';
+  try {
+    const next = await createLearningSession({ course_id: current.course_id, target_knowledge_node_id: recommendation.knowledge_node_id });
+    const completed = [...new Set([...completedTargets.value, current.target_knowledge_node_id])];
+    await router.push({ name: 'learning-session', params: { sessionId: next.session_id }, query: { completed: completed.join(',') } });
+  } catch (error: unknown) {
+    actionError.value = normalizeApiError(error).message;
+  } finally {
+    isStartingNext.value = false;
+  }
+}
+async function loadContinuation(id: number): Promise<void> {
+  continuationLoading.value = true;
+  continuationError.value = '';
+  try {
+    const result = await fetchSessionContinuation(id, completedTargets.value);
+    if (session.value?.session_id === id) continuation.value = result.recommendation;
+  } catch (error: unknown) {
+    if (session.value?.session_id === id) continuationError.value = normalizeApiError(error).message;
+  } finally {
+    if (session.value?.session_id === id) continuationLoading.value = false;
+  }
 }
 async function cancel(): Promise<void> {
   if (!session.value || isCancelling.value) return;
@@ -167,7 +192,10 @@ async function settle(): Promise<void> {
   actionError.value = '';
   try {
     const result = await completeLearningSession(id);
-    if (session.value?.session_id === id) session.value = result;
+    if (session.value?.session_id === id) {
+      session.value = result;
+      void loadContinuation(id);
+    }
   } catch (error: unknown) {
     if (session.value?.session_id === id) actionError.value = normalizeApiError(error).message;
   } finally {
@@ -181,7 +209,7 @@ watch(sessionId, load, { immediate: true });
 <template>
   <section class="page-view session-page">
     <button class="back-link" type="button" @click="backToLearn">
-      <el-icon><ArrowLeft /></el-icon>返回学习计划
+      <el-icon><ArrowLeft /></el-icon>返回学习页
     </button>
     <LoadingBlock v-if="isLoading" :count="3" />
     <ErrorState
@@ -195,7 +223,7 @@ watch(sessionId, load, { immediate: true });
         <div>
           <p>{{ session.course_name }}</p>
           <h1>{{ session.target_knowledge_node_name }}</h1>
-          <span>服务端已保存 {{ completedCount }}/3 个阶段的进度</span>
+          <span>概念 → 练习 → 反馈</span>
         </div>
         <div class="session-header__actions">
           <el-tag v-if="session.status === 'created'" effect="plain">尚未开始</el-tag>
@@ -219,7 +247,8 @@ watch(sessionId, load, { immediate: true });
 
       <p v-if="actionError" class="session-action-error" role="alert">{{ actionError }}</p>
       <template v-if="session.status === 'completed'">
-        <LearningSummary :session="session" :retrying="isSettling" @retry="settle" @back="backToLearn" />
+        <ol class="step-progress" aria-label="学习任务进度"><li>① 理解概念 · 已完成</li><li>② 针对练习 · 已完成</li><li class="current">③ 学习反馈 · 已完成</li></ol>
+        <LearningSummary :session="session" :attempts="attempts" :continuation="continuation" :continuation-loading="continuationLoading" :continuation-error="continuationError" :retrying="isStartingNext" @retry="loadContinuation(session.session_id)" @back="backToLearn" @next="startNext" />
         <details class="session-history">
           <summary>查看 Tutor 辅导记录</summary>
           <TutorPanel
@@ -232,7 +261,12 @@ watch(sessionId, load, { immediate: true });
       </template>
       <div v-else class="session-workspace">
         <main class="session-workspace__main">
-      <section class="learning-content" aria-labelledby="learning-content-title">
+      <ol class="step-progress" aria-label="学习任务进度">
+        <li :class="{ current: step === 'concept' }">① 理解概念 · {{ conceptDone ? '已完成' : '进行中' }}</li>
+        <li :class="{ current: step === 'practice' }">② 针对练习 · {{ practiceDone ? '已完成' : conceptDone ? '进行中' : '未开始' }}</li>
+        <li>③ 学习反馈 · 未开始</li>
+      </ol>
+      <section v-show="step === 'concept'" class="learning-content" aria-labelledby="learning-content-title">
         <header class="learning-content__header">
           <div>
             <span>课程原始资料</span>
@@ -285,43 +319,22 @@ watch(sessionId, load, { immediate: true });
           </div>
         </template>
       </section>
-      <ol class="session-tasks" aria-label="学习任务进度">
-        <li v-for="task in session.tasks" :key="task.task_id" class="session-task">
-          <div class="session-task__marker" :class="`session-task__marker--${task.status}`">
-            <el-icon v-if="task.status === 'completed'"><CircleCheck /></el-icon>
-            <el-icon v-else-if="task.phase === 'adaptive_practice'"><Lock /></el-icon>
-            <el-icon v-else><Clock /></el-icon>
-          </div>
-          <div class="session-task__body">
-            <div class="session-task__heading">
-              <div>
-                <span>阶段 {{ task.order_index + 1 }} · {{ taskLabel(task.status) }}</span>
-                <h2>{{ phaseCopy[task.phase].title }}</h2>
-              </div>
-              <el-button
-                v-if="nextStatus(task) && canWrite"
-                type="primary"
-                :plain="task.status === 'not_started'"
-                :loading="pendingTaskId === task.task_id"
-                :disabled="pendingTaskId !== null || !previousComplete(task)"
-                @click="updateTask(task)"
-                >{{ actionLabel(task) }}</el-button
-              >
-            </div>
-            <p>{{ phaseCopy[task.phase].description }}</p>
-            <PracticePanel
-              v-if="task.phase === 'adaptive_practice'"
-              :session-id="session.session_id"
-              :practice-assessment-id="session.practice_assessment_id"
-              :enabled="previousComplete(task) && canWrite"
-              :read-only="!canWrite"
-              @changed="refreshSession"
-              @ask-tutor="askTutor"
-            />
-          </div>
-        </li>
-      </ol>
-      <el-button v-if="canWrite && completedCount === 3" type="primary" :loading="isSettling" :disabled="isSettling" @click="settle">完成学习并查看结果</el-button>
+      <div v-if="step === 'concept'" class="step-actions">
+        <el-button v-if="canWrite" type="primary" :loading="pendingTaskId !== null" :disabled="pendingTaskId !== null" @click="startPractice">开始练习</el-button>
+      </div>
+      <section v-if="conceptDone" v-show="step === 'practice'" class="learning-content">
+        <button type="button" class="back-link" @click="step = 'concept'">返回查看概念</button>
+        <PracticePanel
+          :session-id="session.session_id"
+          :practice-assessment-id="session.practice_assessment_id"
+          :enabled="canWrite"
+          :read-only="!canWrite"
+          @changed="refreshSession"
+          @attempts="attempts = $event"
+          @ask-tutor="askTutor"
+        />
+        <el-button v-if="canWrite && practiceDone" type="primary" :loading="isSettling" :disabled="isSettling" @click="settle">完成学习并查看结果</el-button>
+      </section>
         </main>
         <TutorPanel
           ref="tutorPanel"
@@ -337,6 +350,10 @@ watch(sessionId, load, { immediate: true });
 </template>
 
 <style scoped>
+.step-progress { display: flex; flex-wrap: wrap; gap: 12px; padding: 0; margin: 24px 0 0; list-style: none; color: var(--lp-text-secondary); }
+.step-progress li { padding: 10px 14px; border-radius: var(--lp-radius-md); background: var(--lp-surface-subtle); }
+.step-progress .current { color: var(--lp-primary); background: var(--lp-primary-soft); font-weight: 700; }
+.step-actions { margin-top: 18px; }
 .session-page {
   max-width: 1280px;
 }

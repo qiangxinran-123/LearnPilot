@@ -401,6 +401,13 @@ def _finish_failed_job(factory: sessionmaker[Session], course_id: int, job_id: i
             return
         if state.checkpoint_json is not None:
             restore_course_knowledge_checkpoint(session, course_id, state.checkpoint_json)
+        logger.warning(
+            "course_knowledge_build_job_failed course_id=%s job_id=%s stage=%s code=%s",
+            course_id,
+            job_id,
+            state.stage,
+            code,
+        )
         state.status = "failed"
         state.stage = None
         state.error_code = code

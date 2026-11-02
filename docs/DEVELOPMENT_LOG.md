@@ -1,6 +1,6 @@
 # LearnPilot 分阶段开发日志
 
-本日志同时记录当前 LearnPilot V1 里程碑和早期 V0.1 原型演进。当前运行基线已完成 M7；下方 V0.1 阶段表仅用于历史追溯。
+本日志同时记录当前 LearnPilot V1 里程碑和早期 V0.1 原型演进。当前代码已进入 M8 进展分析阶段；下方 V0.1 阶段表仅用于历史追溯。
 
 ## LearnPilot V1 里程碑
 
@@ -19,6 +19,7 @@
 | M5 | 学生知识状态 | 从已提交诊断生成 Learning Evidence，并计算可解释的 Mastery/Confidence。 | 见 [M5 最终验收](migration/M5_FINAL_ACCEPTANCE_REPORT.md)。 |
 | M6 | 推荐与学习计划 | 先修约束推荐、计划持久化与复用、首页/学习页展示；补充课程级诊断题准备和资料同步流程。 | 阶段报告最近一次回归：后端 `359/359`、前端 `143/143`；见 [M6 实施报告](migration/M6_IMPLEMENTATION_REPORT.md) 和 [体验完善](migration/M6_UX_FIX_5_REPORT.md)。 |
 | M7 | 学习执行与反馈 | 可恢复学习会话、来源资料、AI 导师、自适应练习、证据结算和掌握/推荐刷新。 | 验收报告记录后端 `410/410`、前端 `181/181`，迁移、浏览器流程和真实 provider 验证通过；见 [M7 最终验收](migration/M7_6_FINAL_ACCEPTANCE_REPORT.md)。 |
+| M8 | 进展分析 | 课程总览、知识点比较、掌握趋势、学习历史及复习风险提示；后续完善学习诊断体验与证据去重。 | 联合回归记录后端 `485/485`、前端 `232/232`；M8 最终验收尚未确认，见 [实施报告](migration/M8_IMPLEMENTATION_REPORT.md)与[联合回归](migration/UX_FIX_FINAL_ACCEPTANCE.md)。 |
 
 M3 完成 Course Knowledge Model，M4/M5 在其上形成诊断证据与学生知识状态，M6 据此生成推荐和学习计划，M7 将练习结果转为证据并刷新掌握状态。M3 边界见 [M3 最终验收](migration/M3_FINAL_ACCEPTANCE.md)。
 

@@ -53,6 +53,9 @@ describe('DiagnosticAssessmentView', () => {
     expect(saveAssessmentResponse).toHaveBeenLastCalledWith(12, 1, ['A']);
     await wrapper.findAll('.number-grid button')[1]!.trigger('click');
     expect(wrapper.text()).toContain('判断题');
+    expect(wrapper.findAll('.el-radio').map((item) => item.text())).toEqual(['正确', '错误']);
+    expect(wrapper.find('.question-card').text()).not.toContain('TRUE');
+    expect(wrapper.find('.question-card').text()).not.toContain('FALSE');
     await wrapper.findAll('.el-radio')[1]!.trigger('click');
     await flushPromises();
     expect(saveAssessmentResponse).toHaveBeenLastCalledWith(12, 2, ['FALSE']);

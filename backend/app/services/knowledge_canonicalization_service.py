@@ -14,6 +14,7 @@ from fastapi import Depends
 from sqlalchemy.orm import Session
 
 from backend.app.ai import AIServiceError, LLMClient, get_llm_client
+from backend.app.ai.errors import knowledge_build_provider_message
 from backend.app.ai.models import KnowledgeCanonicalizationOutput
 from backend.app.ai.prompts import knowledge_canonicalization as canonicalization_prompt
 from backend.app.core.settings import Settings, get_settings
@@ -292,7 +293,10 @@ class KnowledgeCanonicalizationService:
         # Bound raw source and resolution work independently from the distinct
         # concepts sent to semantic blocking. Exact duplicates retain all sources.
         limit = self.settings.knowledge_canonicalization_max_candidates
-        if len(candidates) > limit * 2 or len({normalize_knowledge_name(item.name) for item in candidates}) > limit:
+        if (
+            len(candidates) > self.settings.knowledge_canonicalization_max_raw_candidates
+            or len({normalize_knowledge_name(item.name) for item in candidates}) > limit
+        ):
             raise KnowledgeCanonicalizationError(
                 "KNOWLEDGE_CANONICALIZATION_NOT_READY",
                 "当前课程资料规模超过单次知识结构构建能力，请缩小课程资料范围后重试。",
@@ -631,7 +635,6 @@ class KnowledgeCanonicalizationService:
             payload.append(
                 {
                     "candidate_id": group.representative_id,
-                    "exact_candidate_ids": [candidate.id for candidate in group.candidates],
                     "name_variants": list(dict.fromkeys(candidate.name for candidate in group.candidates))[:3],
                     "description": group.description[:300],
                     "evidence_context": evidence,
@@ -845,6 +848,9 @@ class KnowledgeCanonicalizationService:
                 "KNOWLEDGE_CANONICALIZATION_INVALID_OUTPUT",
                 "AI returned output that did not match the required canonicalization schema.",
             )
+        message = knowledge_build_provider_message(error.code)
+        if message is not None:
+            return KnowledgeCanonicalizationError("KNOWLEDGE_CANONICALIZATION_FAILED", message)
         return KnowledgeCanonicalizationError(
             "KNOWLEDGE_CANONICALIZATION_FAILED",
             "The AI provider could not complete knowledge canonicalization.",

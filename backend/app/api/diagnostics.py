@@ -20,6 +20,7 @@ from backend.app.schemas.question_generation import (
     DiagnosticQuestionGenerationResponseSchema,
     QuestionBankListSchema,
     QuestionBankReadinessSchema,
+    QuestionReviewEligibilitySchema,
     QuestionReviewResponseSchema,
 )
 from backend.app.services.assessment_assembly_service import AssessmentAssemblyError
@@ -104,6 +105,17 @@ def list_diagnostic_questions(
 ) -> QuestionBankListSchema:
     try:
         return service.list_questions(course_id, status)
+    except DiagnosticQuestionBankError as error:
+        raise _api_error(error) from error
+
+
+@router.get("/courses/{course_id}/questions/review-eligibility", response_model=QuestionReviewEligibilitySchema)
+def review_question_eligibility(
+    course_id: int,
+    service: DiagnosticQuestionBankService = Depends(get_diagnostic_question_bank_service),
+) -> QuestionReviewEligibilitySchema:
+    try:
+        return service.review_eligibility(course_id)
     except DiagnosticQuestionBankError as error:
         raise _api_error(error) from error
 

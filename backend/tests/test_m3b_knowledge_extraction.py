@@ -574,6 +574,33 @@ def test_large_material_is_batched_with_bounded_context(database) -> None:
         assert result.run.candidate_count == client.calls
 
 
+def test_batch_contexts_cover_each_source_segment_once(database) -> None:
+    from backend.app.services.knowledge_extraction_service import ReadyExtractionMaterial
+
+    factory, base_settings = database
+    settings = base_settings.model_copy(
+        update={"llm_context_chars": 2000, "llm_chunk_chars": 500, "llm_chunk_overlap_chars": 50}
+    )
+    segments = [
+        {"text": f"Unique segment {index} " + "evidence " * 30, "source_reference": f"Page {index}"}
+        for index in range(12)
+    ]
+    ready = ReadyExtractionMaterial(
+        course_id=1,
+        material_id=1,
+        material_content_hash="test",
+        plain_text="\n".join(str(segment["text"]) for segment in segments),
+        segments=segments,
+    )
+    with factory() as session:
+        batches = make_service(session, settings, ContextAwareClient())._build_batches(ready)
+    contexts = "\n\n".join(batch.context for batch in batches)
+    assert len(batches) > 1
+    assert all(len(batch.context) <= settings.llm_context_chars for batch in batches)
+    for segment in segments:
+        assert contexts.count(f"[{segment['source_reference']}]\n{str(segment['text']).strip()}") == 1
+
+
 def test_empty_candidates_are_valid_and_global_candidate_limit_is_enforced(database) -> None:
     factory, base_settings = database
     with factory() as session:

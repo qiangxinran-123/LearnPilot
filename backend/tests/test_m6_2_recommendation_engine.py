@@ -193,6 +193,28 @@ def test_t04_parallel_prerequisites_produce_multiple_legal_frontier_nodes() -> N
     assert (2, 3, PrerequisiteEvidenceStatus.UNSATISFIED) in statuses
 
 
+def test_continuation_filters_only_resolved_frontier_without_changing_ranking() -> None:
+    engine = RecommendationEngine()
+    context = _context({1: Decimal("20"), 2: Decimal("40"), 3: Decimal("10")}, edges=[(1, 3), (2, 3)])
+    original = engine.recommend(context)
+    assert original.recommended_node_id == 1
+    next_result = engine.recommend_continuation(context, {1})
+    assert next_result is not None and next_result.recommended_node_id == 2
+    assert 3 in next_result.blocked_target_node_ids
+    assert engine.recommend_continuation(context, {1, 2}) is None
+    assert engine.recommend(context) == original
+
+
+def test_foundational_continuation_respects_prerequisites_and_exclusion() -> None:
+    context = _context({1: None, 2: None, 3: None}, edges=[(1, 3), (2, 3)])
+    engine = RecommendationEngine()
+    first = engine.recommend(context)
+    assert first.recommended_node_id in {1, 2}
+    next_result = engine.recommend_continuation(context, {first.recommended_node_id})
+    assert next_result is not None and next_result.recommended_node_id in ({1, 2} - {first.recommended_node_id})
+    assert engine.recommend_continuation(context, {1, 2}) is None
+
+
 def test_t05_formula_components_and_ranking_are_exact() -> None:
     result = RecommendationEngine().recommend(
         _context(

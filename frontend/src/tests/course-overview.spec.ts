@@ -223,6 +223,32 @@ describe('CourseOverview', () => {
     expect(wrapper.findAll('.overview-node')).toHaveLength(6);
   });
 
+  it('shows a disabled loading action and honest coverage while building', async () => {
+    const wrapper = await mountOverview();
+    await wrapper.setProps({ isRunning: true, status: status({
+      state: 'running', has_model: false, can_build: false, stage: 'extracting',
+      pending_parse_material_count: 1, failed_material_count: 1,
+    }) });
+    const button = wrapper.findAll('button').find((item) => item.text().includes('正在生成'));
+    expect(button?.attributes('disabled')).toBeDefined();
+    await button?.trigger('click');
+    expect(wrapper.emitted('build')).toBeUndefined();
+    expect(wrapper.text()).toContain('首次生成需要分析课程资料');
+    expect(wrapper.text()).toContain('资料较多时可能需要更长时间');
+    expect(wrapper.text()).toContain('1 份资料解析失败');
+    expect(wrapper.text()).toContain('未纳入本次知识结构');
+    await wrapper.setProps({ isRunning: false, status: status({ state: 'update_failed', has_model: true }) });
+    expect(wrapper.text()).toContain('已有知识结构仍可查看');
+  });
+
+  it('shows polling failures while continuing the active job', async () => {
+    const wrapper = await mountOverview();
+    await wrapper.setProps({ isRunning: true, status: status({ state: 'running', can_build: false }),
+      statusError: '请求超时，请稍后重试。' });
+    expect(wrapper.text()).toContain('状态暂时无法更新');
+    expect(wrapper.text()).toContain('系统会继续尝试');
+  });
+
   it('links directly from each real canonical node to its course-scoped detail route', async () => {
     const wrapper = await mountOverview();
     const link = wrapper.find('.overview-node__link');

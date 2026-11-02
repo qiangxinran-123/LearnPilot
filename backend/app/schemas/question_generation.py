@@ -32,6 +32,7 @@ class QuestionBankNodeSchema(BaseModel):
 class QuestionBankReadinessSchema(BaseModel):
     course_id: int = Field(gt=0)
     validated_count: int = Field(ge=0)
+    available_questions: int = Field(ge=0)
     pending_count: int = Field(ge=0)
     rejected_count: int = Field(ge=0)
     covered_core_nodes: int = Field(ge=0)
@@ -88,6 +89,11 @@ class CourseQuestionPreparationResponseSchema(BaseModel):
     pending_review_count: int = Field(ge=0)
     questions: list[QuestionBankItemSchema]
     failures: list[CourseQuestionPreparationFailureSchema]
+
+
+class QuestionReviewEligibilitySchema(BaseModel):
+    eligible_ids: list[int]
+    needs_review_count: int = Field(ge=0)
 
 
 class QuestionReviewResponseSchema(BaseModel):

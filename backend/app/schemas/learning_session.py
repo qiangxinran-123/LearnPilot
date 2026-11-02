@@ -10,6 +10,7 @@ from backend.app.models import (
     LearningSessionTaskStatus,
     RecommendationRefreshStatus,
 )
+from backend.app.schemas.practice import PracticeAttemptRead
 
 
 class LearningSessionCreate(BaseModel):
@@ -49,6 +50,7 @@ class LearningSessionRead(BaseModel):
     status: LearningSessionStatus
     session_contract_version: str
     completion_summary: dict[str, object] | None
+    practice_attempts: list[PracticeAttemptRead] | None = None
     recommendation_refresh_status: RecommendationRefreshStatus
     tasks: list[LearningSessionTaskRead] = Field(min_length=3, max_length=3)
     started_at: datetime | None
@@ -67,6 +69,16 @@ class LearningSessionRead(BaseModel):
 
 class ActiveLearningSessionResponse(BaseModel):
     session: LearningSessionRead | None = None
+
+
+class SessionContinuation(BaseModel):
+    knowledge_node_id: int = Field(gt=0)
+    title: str
+    reason_codes: list[str]
+
+
+class SessionContinuationResponse(BaseModel):
+    recommendation: SessionContinuation | None = None
 
 
 class LearningSessionTaskUpdate(BaseModel):

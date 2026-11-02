@@ -10,6 +10,7 @@ import { fetchLearningPlan, generateLearningPlan } from '@/services/learningPlan
 import { createLearningSession, fetchActiveLearningSession } from '@/services/learningSessions';
 import { ApiError } from '@/services/http';
 import type { LearningPlanResponse } from '@/types/learningPlan';
+import type { LearningSession } from '@/types/learningSession';
 
 const routing = vi.hoisted(() => ({
   push: vi.fn(),
@@ -195,6 +196,29 @@ describe('M6-4 recommendation views', () => {
     });
   });
 
+  it('does not open a different active target from the recommendation card', async () => {
+    const active = { session_id: 91, course_id: 7, target_knowledge_node_id: 10, target_knowledge_node_name: '集合基础' } as LearningSession;
+    vi.mocked(fetchActiveLearningSession).mockResolvedValue({ session: active });
+    vi.mocked(createLearningSession).mockResolvedValue({ ...active, session_id: 92, target_knowledge_node_id: 11 });
+    const wrapper = mount(LearnView, mountOptions());
+    await flushPromises();
+    expect(wrapper.find('.active-session-banner').text()).toContain('集合基础');
+    await wrapper.find('.learning-target').findAll('button').find((button) => button.text().includes('开始学习'))!.trigger('click');
+    await flushPromises();
+    expect(createLearningSession).toHaveBeenCalledWith({ course_id: 7, learning_plan_id: 31 });
+    expect(routing.push).toHaveBeenCalledWith({ name: 'learning-session', params: { sessionId: 92 } });
+  });
+
+  it('preserves the completed-target context when resuming the same active session', async () => {
+    routing.route.query = { courseId: '7', flowSession: '91', completed: '4,8' };
+    const active = { session_id: 91, course_id: 7, target_knowledge_node_id: 10, target_knowledge_node_name: '集合基础' } as LearningSession;
+    vi.mocked(fetchActiveLearningSession).mockResolvedValue({ session: active });
+    const wrapper = mount(LearnView, mountOptions());
+    await flushPromises();
+    await wrapper.find('.active-session-banner button').trigger('click');
+    expect(routing.push).toHaveBeenCalledWith({ name: 'learning-session', params: { sessionId: 91 }, query: { completed: '4,8' } });
+  });
+
   it('shows the same real recommendation target on Dashboard and Learn without POSTing', async () => {
     const dashboard = mount(DashboardView, mountOptions());
     await flushPromises();
@@ -203,11 +227,28 @@ describe('M6-4 recommendation views', () => {
     expect(dashboard.text()).toContain('集合映射');
     expect(learn.text()).toContain('集合映射');
     expect(learn.text()).toContain('当前学习课程');
+    expect(learn.text()).not.toContain('为什么推荐这里');
+    expect(learn.text()).not.toContain('前置知识依据');
+    expect(available.plan?.prerequisite_evidence).toHaveLength(1);
     expect(learn.text()).toContain('离散数学');
     expect(learn.text()).toContain('个性化学习计划');
     expect(dashboard.text()).toContain('2 个学习任务');
     expect(learn.text()).toContain('预计 35 分钟');
     expect(generateLearningPlan).not.toHaveBeenCalled();
+  });
+
+  it('ends the current flow when Learn still recommends the finished target, while allowing deliberate review', async () => {
+    routing.route.query = { courseId: '7', finishedNode: '11' };
+    const wrapper = mount(LearnView, mountOptions());
+    await flushPromises();
+    expect(wrapper.text()).toContain('本轮学习已完成');
+    expect(wrapper.find('.learning-target').exists()).toBe(false);
+    expect(wrapper.text()).toContain('主动重新学习');
+    expect(createLearningSession).not.toHaveBeenCalled();
+    vi.mocked(createLearningSession).mockResolvedValue({ session_id: 92 } as LearningSession);
+    await wrapper.findAll('button').find((button) => button.text().includes('主动重新学习'))!.trigger('click');
+    await flushPromises();
+    expect(createLearningSession).toHaveBeenCalledWith({ course_id: 7, learning_plan_id: 31 });
   });
 
   it('renders tasks in backend order and exposes no completion or execution controls', async () => {

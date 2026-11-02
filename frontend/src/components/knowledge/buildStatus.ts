@@ -15,13 +15,31 @@ const stageLabels: Record<KnowledgeBuildStage, string> = {
 };
 
 const LEGACY_CANDIDATE_LIMIT = 'The course exceeds the configured canonicalization candidate limit.';
+const inputLimitMessages = new Set([
+  'Material exceeds the configured knowledge extraction input limit.',
+  'The course exceeds the configured relationship-generation node limit.',
+  'Knowledge extraction exceeded the configured candidate limit.',
+]);
 const LIMIT_MESSAGE = '当前课程资料规模超过单次知识结构构建能力，请缩小课程资料范围后重试。';
 
 /** Do not expose internal English exceptions or stack traces in the build UI. */
 export function safeBuildError(message: string | null | undefined, fallback: string): string {
-  if (message === LEGACY_CANDIDATE_LIMIT) return LIMIT_MESSAGE;
+  if (message === LEGACY_CANDIDATE_LIMIT || (message && inputLimitMessages.has(message))) return LIMIT_MESSAGE;
   if (message && message.length <= 160 && /^[\u3400-\u9fff0-9，。！？、；：‘’“”（）《》\s]+$/.test(message)) return message;
   return fallback;
+}
+
+export function materialCoverageNote(status: KnowledgeBuildStatus): string {
+  const notes: string[] = [];
+  if (status.pending_parse_material_count > 0) notes.push(`${status.pending_parse_material_count} 份资料尚未完成解析`);
+  if (status.failed_material_count > 0) notes.push(`${status.failed_material_count} 份资料解析失败`);
+  return notes.length ? `${notes.join('，')}，未纳入本次知识结构。` : '';
+}
+
+export function runningBuildMessage(status: KnowledgeBuildStatus | null): string {
+  const action = status?.has_model ? '正在更新课程知识结构，完成后会展示最新结果。' : '正在整理课程知识，首次生成需要分析课程资料。';
+  const stage = status?.state === 'running' && status.stage ? `${stageLabels[status.stage]}。 ` : '';
+  return `${action} ${stage}资料较多时可能需要更长时间。`;
 }
 
 export function presentBuildStatus(status: KnowledgeBuildStatus): BuildPresentation {
@@ -49,8 +67,8 @@ export function presentBuildStatus(status: KnowledgeBuildStatus): BuildPresentat
       };
     case 'running':
       return {
-        title: '知识结构构建中',
-        detail: status.stage ? stageLabels[status.stage] : '正在处理课程资料',
+        title: status.has_model ? '正在更新课程知识结构' : '正在整理课程知识',
+        detail: runningBuildMessage(status),
         tone: 'active',
         action: null,
       };

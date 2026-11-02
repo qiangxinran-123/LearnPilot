@@ -12,6 +12,7 @@ from fastapi import Depends
 from sqlalchemy.orm import Session
 
 from backend.app.ai import AIServiceError, LLMClient, get_llm_client
+from backend.app.ai.errors import knowledge_build_provider_message
 from backend.app.ai.models import KnowledgeRelationshipEdgeDraft, KnowledgeRelationshipOutput
 from backend.app.ai.prompts import knowledge_relationships as relationship_prompt
 from backend.app.core.settings import Settings, get_settings
@@ -587,6 +588,9 @@ class KnowledgeRelationshipService:
                 "KNOWLEDGE_RELATIONSHIP_INVALID_OUTPUT",
                 "AI returned output that did not match the required relationship schema.",
             )
+        message = knowledge_build_provider_message(error.code)
+        if message is not None:
+            return KnowledgeRelationshipError("KNOWLEDGE_RELATIONSHIP_FAILED", message)
         return KnowledgeRelationshipError(
             "KNOWLEDGE_RELATIONSHIP_FAILED",
             "The AI provider could not complete knowledge relationship generation.",

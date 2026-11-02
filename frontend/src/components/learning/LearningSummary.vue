@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import type { LearningSession } from '@/types/learningSession';
+import type { LearningSession, PracticeAttempt, SessionContinuation } from '@/types/learningSession';
 import { recommendationReasonLabel } from '@/components/learning/planPresentation';
 
-const props = defineProps<{ session: LearningSession; retrying: boolean }>();
-defineEmits<{ retry: []; back: [] }>();
+const props = defineProps<{ session: LearningSession; retrying: boolean; attempts?: PracticeAttempt[]; continuation?: SessionContinuation | null; continuationLoading?: boolean; continuationError?: string }>();
+defineEmits<{ retry: []; back: []; next: [] }>();
 const summary = computed(() => props.session.completion_summary);
 const change = computed(() =>
   summary.value?.mastery_changes.find((item) => item.knowledge_node_id === props.session.target_knowledge_node_id),
@@ -37,10 +37,21 @@ const confidenceLabels: Record<string, string> = {
       <div class="summary__stats" aria-label="练习结果">
         <div><strong>{{ summary.practice_summary.total_questions }}</strong><span>完成题数</span></div>
         <div><strong>{{ summary.practice_summary.correct_answers }}</strong><span>正确题数</span></div>
+        <div><strong>{{ summary.practice_summary.total_questions - summary.practice_summary.correct_answers }}</strong><span>错误题数</span></div>
         <div><strong>{{ (summary.practice_summary.accuracy * 100).toFixed(0) }}%</strong><span>正确率</span></div>
       </div>
+      <details v-if="attempts?.length">
+        <summary>查看本轮错题与作答</summary>
+        <article v-for="attempt in attempts" :key="attempt.attempt_id">
+          <h3>第 {{ attempt.question_number }} 题：{{ attempt.stem }}</h3>
+          <p>{{ attempt.is_correct ? '回答正确' : '回答错误' }}</p>
+          <p>你的答案：{{ attempt.selected_options.join('、') }}；正确答案：{{ attempt.correct_answer.join('、') }}</p>
+          <p>{{ attempt.explanation }}</p>
+        </article>
+      </details>
       <section class="summary__mastery">
         <h3>知识点掌握度</h3>
+        <p v-if="change?.after == null">掌握情况待更新。</p>
         <div v-for="entry in [{ label: '学习前', value: change?.before }, { label: '学习后', value: change?.after }]" :key="entry.label" class="summary__row">
           <span>{{ entry.label }}</span>
           <div class="summary__track" aria-hidden="true"><i :style="{ width: width(entry.value) }" /></div>
@@ -52,17 +63,17 @@ const confidenceLabels: Record<string, string> = {
       </section>
       <section class="summary__next">
         <h3>下一步学习建议</h3>
-        <template v-if="session.recommendation_refresh_status === 'failed' || session.recommendation_refresh_status === 'pending'">
+        <p v-if="continuationLoading">正在获取下一步学习建议…</p>
+        <template v-else-if="continuationError">
           <p>学习结果已保存，学习建议暂时无法更新。</p>
           <el-button :loading="retrying" :disabled="retrying" @click="$emit('retry')">重试更新建议</el-button>
         </template>
-        <template v-else-if="summary.recommendation">
-          <strong>{{ summary.recommendation.title }}</strong>
-          <ul><li v-for="code in summary.recommendation.reason_codes" :key="code">{{ recommendationReasonLabel(code) }}</li></ul>
-          <p>{{ summary.recommendation.description }}</p>
-          <el-button type="primary" plain @click="$emit('back')">查看学习路径</el-button>
+        <template v-else-if="continuation && continuation.knowledge_node_id !== session.target_knowledge_node_id">
+          <strong>{{ continuation.title }}</strong>
+          <ul><li v-for="code in continuation.reason_codes" :key="code">{{ recommendationReasonLabel(code) }}</li></ul>
+          <el-button type="primary" :loading="retrying" :disabled="retrying" @click="$emit('next')">学习下一个知识点</el-button>
         </template>
-        <p v-else>当前没有可用的下一步推荐，可返回学习路径查看课程状态。</p>
+        <template v-else><p>本轮学习已完成。当前没有可用的下一步推荐。</p><el-button type="primary" @click="$emit('back')">返回学习页</el-button></template>
       </section>
     </template>
     <p v-else>学习结果暂不可用，请返回学习路径后重试。</p>

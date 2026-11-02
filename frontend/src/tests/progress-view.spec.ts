@@ -30,7 +30,7 @@ const overview: ProgressOverview = { course_id: 7, overall_mastery: '0.00', eval
   weak_nodes: [weak] };
 const model = { course_id: 7, nodes: [{ id: 10, course_id: 7, name: '模块', normalized_name: '模块',
   description: '', importance: 'medium' as const, difficulty: 'basic' as const, created_at: '', updated_at: '' }], edges: [] };
-function mountPage() { return mount(ProgressView, { global: { plugins: [createPinia()], stubs: { ProgressHistoryPanel: true, RouterLink: { template: '<a><slot /></a>' } } } }); }
+function mountPage() { return mount(ProgressView, { global: { plugins: [createPinia()], stubs: { ProgressHistoryPanel: { template: '<div class="history-stub"><slot /></div>' }, RouterLink: { template: '<a><slot /></a>' } } } }); }
 describe('progress overview', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -46,6 +46,8 @@ describe('progress overview', () => {
     const wrapper = mountPage();
     await flushPromises();
     expect(wrapper.text()).toContain('0.00%');
+    expect(wrapper.text()).not.toContain('暂无数据');
+    await wrapper.find('.comparison-toggle').trigger('click');
     expect(wrapper.text()).toContain('暂无数据');
     expect(wrapper.text()).toContain('尚未计算');
     expect(wrapper.text()).toContain('已评估 1 / 2');
@@ -100,11 +102,33 @@ describe('progress overview', () => {
     });
     const wrapper = mountPage();
     await flushPromises();
+    await wrapper.find('.comparison-toggle').trigger('click');
     expect(wrapper.text()).toContain('状态已过期');
     wrapper.findAllComponents(ElSelect)[1]?.vm.$emit('update:modelValue', '10');
     await flushPromises();
     expect(wrapper.findAll('.chart-row')).toHaveLength(1);
     expect(wrapper.find('.chart-row').text()).toContain(weak.name);
+  });
+  it('limits the selected module to six assessed nodes and resets expansion on filter changes', async () => {
+    const nodes = Array.from({ length: 9 }, (_, index) => ({
+      ...weak, node_id: 20 + index, name: `节点 ${index}`, parent_ids: index < 7 ? [10] : [],
+    }));
+    vi.mocked(fetchProgressKnowledge).mockResolvedValue({ course_id: 7, nodes: [...nodes, unknown] });
+    const wrapper = mountPage();
+    await flushPromises();
+    expect(wrapper.findAll('.chart-row')).toHaveLength(6);
+    expect(wrapper.find('.comparison-toggle').text()).toContain('共 10 个');
+    await wrapper.find('.comparison-toggle').trigger('click');
+    expect(wrapper.findAll('.chart-row')).toHaveLength(10);
+    expect(wrapper.text()).toContain('暂无数据');
+    wrapper.findAllComponents(ElSelect)[1]?.vm.$emit('update:modelValue', '10');
+    await flushPromises();
+    expect(wrapper.findAll('.chart-row')).toHaveLength(6);
+    expect(wrapper.find('.comparison-toggle').text()).toContain('共 8 个');
+    await wrapper.find('.comparison-toggle').trigger('click');
+    expect(wrapper.findAll('.chart-row')).toHaveLength(8);
+    await wrapper.find('.comparison-toggle').trigger('click');
+    expect(wrapper.findAll('.chart-row')).toHaveLength(6);
   });
   it('shows a course empty state', async () => {
     vi.mocked(fetchCourses).mockResolvedValue({ count: 0, courses: [] });

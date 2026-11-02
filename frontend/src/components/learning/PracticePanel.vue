@@ -4,7 +4,7 @@ import { CircleCheck, QuestionFilled, Right } from '@element-plus/icons-vue';
 
 import LoadingBlock from '@/components/feedback/LoadingBlock.vue';
 import { useAdaptivePractice } from '@/composables/useAdaptivePractice';
-import type { TeachingStrategy } from '@/types/learningSession';
+import type { PracticeAttempt, TeachingStrategy } from '@/types/learningSession';
 
 const props = defineProps<{
   sessionId: number;
@@ -15,6 +15,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   changed: [];
   askTutor: [request: { message: string; mode: TeachingStrategy }];
+  attempts: [attempts: PracticeAttempt[]];
 }>();
 
 const adaptive = useAdaptivePractice();
@@ -27,6 +28,9 @@ const singleSelection = computed(() => selectedOptions.value[0] ?? '');
 const difficultyLabel = computed(() => {
   const labels = { easy: '基础', medium: '中等', hard: '进阶' } as const;
   return adaptive.practice.value ? labels[adaptive.practice.value.current_difficulty] : '';
+});
+watch(() => adaptive.practice.value, (practice) => {
+  if (practice) emit('attempts', practice.attempts);
 });
 
 async function loadNext(): Promise<void> {
@@ -80,11 +84,11 @@ function explainMistake(): void {
 
 watch(
   () => [props.sessionId, props.practiceAssessmentId, props.enabled] as const,
-  ([sessionId, assessmentId, enabled]) => {
+  ([, assessmentId, enabled]) => {
     adaptive.clear();
     selectedOptions.value = [];
     validationMessage.value = '';
-    if (enabled && assessmentId !== null) void adaptive.loadNext(sessionId);
+    if (enabled && assessmentId !== null) void loadNext();
   },
   { immediate: true },
 );
@@ -94,11 +98,11 @@ watch(
   <section class="practice-panel" aria-labelledby="practice-title">
     <header class="practice-panel__header">
       <div>
-        <span>确定性评分 · 最多 5 题</span>
+        <span>根据作答表现逐题安排</span>
         <h3 id="practice-title">针对练习</h3>
       </div>
       <div v-if="adaptive.practice.value" class="practice-meta">
-        <strong>{{ adaptive.practice.value.answered_count }}/{{ adaptive.practice.value.max_questions }}</strong>
+        <strong>已完成 {{ adaptive.practice.value.answered_count }} 题</strong>
         <span>{{ difficultyLabel }}</span>
       </div>
     </header>
@@ -156,7 +160,7 @@ watch(
           @change="selectSingle"
         >
           <el-radio v-for="option in question.options" :key="option.key" :value="option.key" border>
-            {{ option.text }}
+            <span v-if="question.question_type === 'true_false'" class="boolean-option">{{ option.key === 'TRUE' ? '正确' : '错误' }}</span><template v-else>{{ option.text }}</template>
           </el-radio>
         </el-radio-group>
         <p v-if="validationMessage" class="practice-error" role="alert">{{ validationMessage }}</p>
@@ -266,6 +270,7 @@ watch(
   font-size: 17px;
   line-height: 1.65;
 }
+.boolean-option { white-space: nowrap; }
 .practice-options {
   display: grid;
   gap: 10px;

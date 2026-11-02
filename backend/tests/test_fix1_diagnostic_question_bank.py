@@ -500,3 +500,77 @@ def test_course_preparation_reports_partial_failure_without_rolling_back_valid_i
         stored = list(session.scalars(select(Question)))
         assert len(stored) == 1
         assert stored[0].validation_status == QuestionValidationStatus.PENDING
+
+
+def test_review_eligibility_reuses_publication_validation_and_respects_states(database) -> None:
+    factory, seed = database
+    with factory() as session, session.begin():
+        valid = _add_question(
+            session,
+            course_id=seed.course_id,
+            node_id=seed.node_id,
+            material_id=seed.material_id,
+            stem="Which cache policy evicts the least recently used entry?",
+            status=QuestionValidationStatus.PENDING,
+        )
+        invalid = _add_question(
+            session,
+            course_id=seed.course_id,
+            node_id=seed.node_id,
+            material_id=seed.material_id,
+            stem="Which entry is evicted when data is missing?",
+            status=QuestionValidationStatus.PENDING,
+        )
+        valid.options = candidate(seed)["options"]
+        valid.correct_answer = ["B"]
+        valid.source_refs = [{"material_id": seed.material_id, "source_reference": "PDF 第2页"}]
+        invalid.correct_answer = []
+        rejected = _add_question(
+            session,
+            course_id=seed.course_id,
+            node_id=seed.node_id,
+            material_id=seed.material_id,
+            stem="Which answer has already been rejected?",
+            status=QuestionValidationStatus.REJECTED,
+        )
+        valid_id, invalid_id, rejected_id = valid.id, invalid.id, rejected.id
+    with factory() as session:
+        service = _service(session)
+        preview = service.review_eligibility(seed.course_id)
+        assert preview.eligible_ids == [valid_id]
+        assert preview.needs_review_count == 1
+        assert (
+            service.approve(seed.course_id, valid_id).question.validation_status == QuestionValidationStatus.VALIDATED
+        )
+        with pytest.raises(DiagnosticQuestionBankError):
+            service.approve(seed.course_id, invalid_id)
+        with pytest.raises(DiagnosticQuestionBankError):
+            service.approve(seed.course_id, rejected_id)
+        with pytest.raises(DiagnosticQuestionBankError):
+            service.approve(seed.course_id, valid_id)
+        assert service.review_eligibility(seed.course_id).eligible_ids == []
+        with pytest.raises(DiagnosticQuestionBankError):
+            service.review_eligibility(seed.other_course_id)
+    with factory() as session:
+        assert session.get(Question, invalid_id).validation_status == QuestionValidationStatus.PENDING
+        assert session.get(Question, rejected_id).validation_status == QuestionValidationStatus.REJECTED
+
+
+def test_readiness_exposes_exact_assembly_available_count(database) -> None:
+    factory, seed = database
+    with factory() as session, session.begin():
+        for index in range(2):
+            question = _add_question(
+                session,
+                course_id=seed.course_id,
+                node_id=seed.node_id,
+                material_id=seed.material_id,
+                stem="Same duplicate question stem?",
+                status=QuestionValidationStatus.VALIDATED,
+            )
+        del question
+    with factory() as session:
+        readiness = _service(session).readiness(seed.course_id)
+        assert readiness.validated_count == 2
+        assert readiness.available_questions == 1
+        assert readiness.can_start is False

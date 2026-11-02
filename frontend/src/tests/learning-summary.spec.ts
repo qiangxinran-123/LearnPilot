@@ -25,7 +25,8 @@ function session(delta: number | null, status: LearningSession['recommendation_r
 describe('learning settlement summary', () => {
   it.each([[16, '提高 16 个百分点'], [-8, '下降 8 个百分点'], [0, '本次掌握度保持不变'], [null, '当前证据尚不足以比较变化']])(
     'shows real mastery change %s', (delta, text) => {
-      const wrapper = mount(LearningSummary, { props: { session: session(delta), retrying: false } });
+      const current = session(delta);
+      const wrapper = mount(LearningSummary, { props: { session: current, retrying: false, continuation: current.completion_summary!.recommendation } });
       expect(wrapper.text()).toContain(text);
       expect(wrapper.text()).toContain('52%');
       expect(wrapper.text()).toContain('80%');
@@ -37,9 +38,28 @@ describe('learning settlement summary', () => {
     if (empty.completion_summary) empty.completion_summary.recommendation = null;
     const wrapper = mount(LearningSummary, { props: { session: empty, retrying: false } });
     expect(wrapper.text()).toContain('当前没有可用的下一步推荐');
-    await wrapper.setProps({ session: session(0, 'failed') });
+    await wrapper.setProps({ session: session(0, 'failed'), continuationError: 'failed' });
     expect(wrapper.text()).toContain('学习结果已保存');
     wrapper.findComponent({ name: 'ElButton' }).vm.$emit('click');
     expect(wrapper.emitted('retry')).toHaveLength(1);
+  });
+  it('ends this round instead of offering the same target again', () => {
+    const repeated = session(0);
+    repeated.completion_summary!.recommendation!.knowledge_node_id = repeated.target_knowledge_node_id;
+    const wrapper = mount(LearningSummary, { props: { session: repeated, retrying: false, continuation: repeated.completion_summary!.recommendation } });
+    expect(wrapper.text()).toContain('本轮学习已完成');
+    expect(wrapper.text()).toContain('返回学习页');
+    expect(wrapper.text()).not.toContain('学习下一个知识点');
+  });
+  it('shows actual wrong-answer details supplied by the practice panel', () => {
+    const wrapper = mount(LearningSummary, { props: { session: session(0), retrying: false, attempts: [{
+      attempt_id: 10, assessment_question_id: 11, question_id: 12, question_number: 1,
+      question_type: 'single_choice', stem: '缓存映射？', options: [], difficulty: 'medium',
+      selected_options: ['B'], correct_answer: ['A'], explanation: '按块号映射。', is_correct: false,
+      points_awarded: '0', source_refs: [], submitted_at: '2026-01-01',
+    }] } });
+    expect(wrapper.text()).toContain('查看本轮错题');
+    expect(wrapper.text()).toContain('缓存映射？');
+    expect(wrapper.text()).toContain('按块号映射。');
   });
 });

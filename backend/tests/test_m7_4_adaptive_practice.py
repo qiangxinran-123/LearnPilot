@@ -430,3 +430,40 @@ def test_migration_preserves_populated_m7_3_database(tmp_path: Path) -> None:
     with sessionmaker(bind=engine)() as session:
         assert session.scalar(select(func.count()).select_from(Assessment)) == 1
     engine.dispose()
+
+
+def test_diagnostic_history_and_resume_exclude_learning_practice(practice_database) -> None:
+    from backend.app.services.diagnostic_experience_service import DiagnosticExperienceService
+
+    factory, ids, correct, database_url = practice_database
+    with factory() as db, db.begin():
+        formal = Assessment(
+            course_id=ids["course"],
+            owner_id=ids["owner"],
+            assessment_type=AssessmentType.INITIAL_DIAGNOSTIC,
+            status=AssessmentStatus.READY,
+        )
+        other_course_formal = Assessment(
+            course_id=ids["other_course"],
+            owner_id=ids["owner"],
+            assessment_type=AssessmentType.INITIAL_DIAGNOSTIC,
+            status=AssessmentStatus.SUBMITTED,
+        )
+        db.add_all([formal, other_course_formal])
+        db.flush()
+        formal_id, other_id = formal.id, other_course_formal.id
+    session_id = _ready_session(factory, ids, database_url)
+    state = _next(factory, database_url, session_id)
+    question = state.current_question
+    assert question is not None
+    _answer(factory, database_url, session_id, question.assessment_question_id, correct[question.question_id])
+    with factory() as db:
+        service = DiagnosticExperienceService(db, _settings(database_url))
+        history = service.list_assessments()
+        assert [row.id for row in history.assessments] == [other_id, formal_id]
+        assert history.assessments[-1].status == AssessmentStatus.READY
+        resumed = service.create_or_resume(ids["course"])
+        assert resumed.id == formal_id
+    with factory() as db:
+        assert db.scalar(select(func.count()).select_from(Response)) == 1
+        assert db.scalar(select(func.count()).select_from(LearningEvidence)) == 0

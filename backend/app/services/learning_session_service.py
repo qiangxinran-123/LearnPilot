@@ -10,6 +10,7 @@ from backend.app.core.settings import Settings, get_settings
 from backend.app.db.models import LearningSession, LearningSessionTaskState
 from backend.app.db.session import get_db
 from backend.app.models import (
+    AssessmentStatus,
     LearningSessionStatus,
     LearningSessionTaskPhase,
     LearningSessionTaskStatus,
@@ -23,6 +24,8 @@ from backend.app.schemas.learning_session import (
     LearningSessionRead,
     LearningSessionTaskRead,
     LearningSessionTaskUpdate,
+    SessionContinuation,
+    SessionContinuationResponse,
 )
 
 SESSION_CONTRACT_VERSION = "learning_session_v1"
@@ -142,7 +145,27 @@ class LearningSessionService:
         user_id = self._configured_user_id()
         with self.session.begin():
             learning_session = self._require_owned(session_id, user_id)
-            return _read_session(learning_session)
+            if learning_session.course.owner_id != user_id:
+                raise LearningSessionError("SESSION_NOT_FOUND", "Learning session not found.")
+            result = _read_session(learning_session)
+            if learning_session.status == LearningSessionStatus.COMPLETED:
+                # Reuse the practice reader's owner, course and assessment-type checks.
+                from backend.app.services.adaptive_practice_service import (
+                    AdaptivePracticeError,
+                    AdaptivePracticeService,
+                    _attempt_read,
+                    _submitted_pairs,
+                )
+
+                try:
+                    practice = AdaptivePracticeService(self.session, self.settings)
+                    assessment = practice._practice_assessment(learning_session, user_id)
+                except AdaptivePracticeError as error:
+                    raise LearningSessionError("PRACTICE_SCOPE_MISMATCH", error.message) from error
+                if assessment is None or assessment.status != AssessmentStatus.SUBMITTED:
+                    raise LearningSessionError("PRACTICE_NOT_READY", "Practice results are unavailable.")
+                result.practice_attempts = [_attempt_read(q, response) for q, response in _submitted_pairs(assessment)]
+            return result
 
     def get_active_for_configured_user(self, course_id: int) -> ActiveLearningSessionResponse:
         user_id = self._configured_user_id()
@@ -153,6 +176,34 @@ class LearningSessionService:
             return ActiveLearningSessionResponse(
                 session=_read_session(learning_session) if learning_session is not None else None
             )
+
+    def continuation_for_configured_user(self, session_id: int, excluded: set[int]) -> SessionContinuationResponse:
+        from backend.app.services.recommendation_context_service import RecommendationContextService
+        from backend.app.services.recommendation_engine import RecommendationEngine
+
+        user_id = self._configured_user_id()
+        with self.session.begin():
+            item = self._require_owned(session_id, user_id)
+            if item.course.owner_id != user_id:
+                raise LearningSessionError("SESSION_NOT_FOUND", "Learning session not found.")
+            if item.status != LearningSessionStatus.COMPLETED:
+                raise LearningSessionError("SESSION_NOT_READY", "Complete the session first.")
+            course_id = item.course_id
+            excluded = excluded | {item.target_knowledge_node_id}
+        context = RecommendationContextService(self.session).build_recommendation_context(
+            user_id=user_id, course_id=course_id
+        )
+        result = RecommendationEngine().recommend_continuation(context, excluded)
+        if result is None:
+            return SessionContinuationResponse()
+        node = next(node for node in context.knowledge_nodes if node.knowledge_node_id == result.recommended_node_id)
+        return SessionContinuationResponse(
+            recommendation=SessionContinuation(
+                knowledge_node_id=node.knowledge_node_id,
+                title=node.name,
+                reason_codes=[reason.value for reason in result.reason_codes],
+            )
+        )
 
     def update_task_for_configured_user(
         self,

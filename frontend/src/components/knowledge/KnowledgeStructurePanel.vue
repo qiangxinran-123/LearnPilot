@@ -4,7 +4,7 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import { useRoute, useRouter, type LocationQueryRaw } from 'vue-router';
 import type { ElTree } from 'element-plus';
 
-import { presentBuildStatus } from '@/components/knowledge/buildStatus';
+import { materialCoverageNote, presentBuildStatus, runningBuildMessage } from '@/components/knowledge/buildStatus';
 import KnowledgeFocusGraph from '@/components/knowledge/KnowledgeFocusGraph.vue';
 import {
   adaptKnowledgeModelToFocus,
@@ -34,6 +34,8 @@ const props = defineProps<{
   model: KnowledgeModelResponse | null;
   modelState: 'loading' | 'ready' | 'error';
   modelError: string;
+  buildError?: string;
+  statusError?: string;
   status: KnowledgeBuildStatus | null;
   isRunning: boolean;
 }>();
@@ -239,18 +241,25 @@ onBeforeUnmount(() => {
         <el-radio-button value="mastery">我的掌握状态</el-radio-button>
       </el-radio-group>
       <el-button
-        v-if="buildPresentation?.action && status?.can_build"
+        v-if="(buildPresentation?.action && status?.can_build) || isRunning"
         type="primary"
         :disabled="isRunning"
         :loading="isRunning"
         @click="emit('build')"
       >
         <el-icon><RefreshRight v-if="hasNodes" /><MagicStick v-else /></el-icon
-        >{{ buildPresentation.action }}
+        >{{ isRunning ? '正在生成' : buildPresentation?.action }}
       </el-button>
     </header>
     <p v-if="isRunning" class="knowledge-map__status" role="status">
-      {{ buildPresentation?.detail || '正在构建课程知识结构…' }}
+      {{ runningBuildMessage(status) }}
+    </p>
+    <p v-if="buildError" class="knowledge-map__warning" role="alert">{{ buildError }}</p>
+    <p v-if="statusError && isRunning" class="knowledge-map__warning" role="alert">
+      状态暂时无法更新：{{ statusError }} 系统会继续尝试。
+    </p>
+    <p v-if="status && materialCoverageNote(status)" class="knowledge-map__warning" role="status">
+      {{ materialCoverageNote(status) }}
     </p>
     <p
       v-if="status?.state === 'failed' || status?.state === 'update_failed'"

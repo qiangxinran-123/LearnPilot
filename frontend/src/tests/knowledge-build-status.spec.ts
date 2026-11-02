@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { presentBuildStatus } from '@/components/knowledge/buildStatus';
+import { materialCoverageNote, presentBuildStatus, runningBuildMessage } from '@/components/knowledge/buildStatus';
 import type { KnowledgeBuildState, KnowledgeBuildStatus } from '@/types/knowledge';
 
 function status(
@@ -39,7 +39,7 @@ describe('presentBuildStatus', () => {
     ['no_materials', '尚未上传资料', null],
     ['not_ready', '资料尚不能用于构建', null],
     ['not_built', '尚未生成知识结构', '生成课程知识结构'],
-    ['running', '知识结构构建中', null],
+    ['running', '正在整理课程知识', null],
     ['ready', '知识结构已构建', null],
     ['update_available', '有新资料待更新', '更新知识结构'],
     ['failed', '最近一次构建失败', '重试生成'],
@@ -56,13 +56,13 @@ describe('presentBuildStatus', () => {
 
   it('names only the actual running stage, without claiming percentage progress', () => {
     expect(presentBuildStatus(status('running', { stage: 'extracting' })).detail).toBe(
-      '正在抽取知识',
+      '正在整理课程知识，首次生成需要分析课程资料。 正在抽取知识。 资料较多时可能需要更长时间。',
     );
     expect(presentBuildStatus(status('running', { stage: 'canonicalizing' })).detail).toBe(
-      '正在规范化知识',
+      '正在整理课程知识，首次生成需要分析课程资料。 正在规范化知识。 资料较多时可能需要更长时间。',
     );
     expect(presentBuildStatus(status('running', { stage: 'relationships' })).detail).toBe(
-      '正在建立知识关系',
+      '正在整理课程知识，首次生成需要分析课程资料。 正在建立知识关系。 资料较多时可能需要更长时间。',
     );
   });
 
@@ -105,5 +105,27 @@ describe('safe build failure messages', () => {
       error_message: 'Traceback: internal implementation detail',
     }));
     expect(presentation.detail).toBe('知识结构构建未成功，请检查资料后重试。');
+  });
+});
+
+
+describe('coverage and waiting feedback', () => {
+  it('distinguishes new generation and updates, including an initial submission without a stage', () => {
+    expect(runningBuildMessage(status('not_built'))).toContain('首次生成');
+    expect(runningBuildMessage(status('running', { has_model: true, stage: 'relationships' })))
+      .toContain('正在更新课程知识结构');
+    expect(runningBuildMessage(status('running', { has_model: true, stage: 'relationships' })))
+      .toContain('正在建立知识关系');
+  });
+  it('reports skipped parsing and failed materials without claiming full coverage', () => {
+    expect(materialCoverageNote(status('ready', { pending_parse_material_count: 2, failed_material_count: 1 })))
+      .toBe('2 份资料尚未完成解析，1 份资料解析失败，未纳入本次知识结构。');
+    expect(materialCoverageNote(status('ready'))).toBe('');
+  });
+  it('translates actual input and relationship limits', () => {
+    expect(presentBuildStatus(status('failed', { error_message: 'Material exceeds the configured knowledge extraction input limit.' })).detail)
+      .toContain('资料规模超过');
+    expect(presentBuildStatus(status('failed', { error_message: 'The course exceeds the configured relationship-generation node limit.' })).detail)
+      .toContain('资料规模超过');
   });
 });

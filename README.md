@@ -2,13 +2,13 @@
 
 LearnPilot 是面向大学理工科课程的 AI 学习诊断与个性化学习系统。
 
-当前代码基线为 **LearnPilot V1 / M7 Final Acceptance**。旧版 LearnPilot V0.x 的 JSON 原型、原生前端和比赛材料仍保留用于追溯，但不再代表当前运行架构。核心链路为：
+当前代码基线为 **LearnPilot V1 / M8 进展分析阶段**。旧版 LearnPilot V0.x 的 JSON 原型、原生前端和比赛材料仍保留用于追溯，但不再代表当前运行架构。核心链路为：
 
 ```text
 课程资料 → 知识建模 → AI 题库 → 学习诊断 → 确定性评分
   → Learning Evidence → Mastery/Confidence → 个性化知识地图
   → 推荐排序 → 学习计划 → 学习会话、AI 导师与自适应练习
-  → 练习证据 → 掌握状态和推荐刷新
+  → 练习证据 → 掌握状态和推荐刷新 → 进展、历史与复习提示
 ```
 
 ## 当前能力
@@ -27,6 +27,8 @@ LearnPilot 是面向大学理工科课程的 AI 学习诊断与个性化学习�
 - M6 体验完善包括课程级诊断题准备与人工审核入口、未完成诊断恢复，以及新增资料后的显式知识同步和题目缺口补充。
 - M7 将学习计划接入可恢复的学习会话，按任务顺序呈现课程资料和来源；AI 导师结合当前学习内容提供提示、引导和讲解。
 - M7 自适应练习根据答题表现调整难度；完成会话后将真实练习结果转为可追溯证据，刷新掌握状态与后续推荐，并展示学习总结。
+- M8 提供课程进展总览、知识点掌握比较、真实历史快照趋势、诊断与学习历史，以及基于已有证据的复习风险提示。
+- 后续体验完善包括学习和诊断流程、批量题目审核、课程切换及构建状态反馈；同源同版本的重复练习不会重复新增练习证据。
 
 M3 建立课程知识模型，M4/M5 提供诊断与学生知识状态，M6 生成推荐与学习计划，M7 完成学习、练习与反馈闭环。Mastery 是基于有效 Learning Evidence 的确定性掌握度估计，不是单次诊断正确率，也不是经过教育测量学标定的真实掌握概率。图坐标等展示状态不会写入领域数据。
 
@@ -108,7 +110,8 @@ LLM_MODEL=...
 15. `0015_m7_1_learning_sessions`：学习会话与任务状态；
 16. `0016_m7_3_tutor_messages`：会话内导师消息；
 17. `0017_m7_4_practice_assessment`：练习测评类型；
-18. `0018_m7_5_practice_evidence`：练习证据来源。
+18. `0018_m7_5_practice_evidence`：练习证据来源；
+19. `0019_m8_mastery_history`：掌握状态历史快照。
 
 旧 `backend/app/data/courses.json` 不会在启动时自动导入。先执行 dry-run，再决定是否写入目标数据库：
 
@@ -161,6 +164,7 @@ LLM_MODEL=...
 - `PUT /api/learning/sessions/{session_id}/practice/responses/{assessment_question_id}`
 - `PATCH /api/learning/sessions/{session_id}/tasks/{phase}`
 - `POST /api/learning/sessions/{session_id}/complete`、`POST /api/learning/sessions/{session_id}/cancel`
+- `GET /api/courses/{course_id}/progress/overview`、`/knowledge`、`/trend`、`/history`、`/review-risk`
 
 请求参数、响应边界和错误码见 [API 总览](docs/API_OVERVIEW.md)。
 
@@ -204,6 +208,10 @@ M4 的诊断题固定知识节点和历史题目快照，提交后使用已保�
 
 练习复用已审核题目和确定性评分，依据连续答对或答错调整难度，每次会话最多提交五题。完成会话时，已评分练习转为可追溯的 Learning Evidence，刷新 Mastery 并保存学习总结；重复完成不会重复写入证据。推荐在结算后刷新，若刷新失败可单独重试。
 
+## M8 进展分析
+
+进展页按当前课程展示知识点掌握情况、覆盖率、真实历史趋势和已提交诊断及已完成学习会话。历史从开始记录快照时起展示，不补造此前数据；图结构或算法不兼容的历史点不会连成连续趋势。复习提示基于现有状态和练习时间的启发式规则，不等同经过验证的遗忘预测或自动推荐。
+
 ## 质量检查
 
 后端：
@@ -224,14 +232,14 @@ npm run test
 npm run build
 ```
 
-M7 最终验收报告记录：后端 `410/410`、前端 `181/181` 测试通过，Ruff、TypeScript、ESLint、生产构建、迁移与隔离环境浏览器流程通过。该快照来自已保存的验收报告，本次文档与推送操作未重新运行测试。构建中的懒加载 vendor chunk 体积提示仍是非阻塞事项。
+M8 后续体验联合回归报告记录：后端 `485/485`、前端 `232/232` 测试通过，Ruff、TypeScript、ESLint、生产构建及隔离 SQLite 迁移检查通过；浏览器证据复用此前阶段记录。上述结果来自已有报告，本次文档与推送操作未重新运行测试。M8 最终验收尚未确认。
 
 ## 项目结构
 
 ```text
 learnpilot/
 ├── backend/
-│   ├── alembic/                 # 0001 → … → 0018 数据库迁移
+│   ├── alembic/                 # 0001 → … → 0019 数据库迁移
 │   ├── app/
 │   │   ├── ai/                  # provider/mock 适配与审计边界
 │   │   ├── api/                 # 课程、资料、知识模型接口
@@ -280,6 +288,9 @@ learnpilot/
 - [M6 体验完善报告](docs/migration/M6_UX_FIX_5_REPORT.md)
 - [M7 集成设计](docs/architecture/M7_INTEGRATION_DESIGN.md)
 - [M7 最终验收报告](docs/migration/M7_6_FINAL_ACCEPTANCE_REPORT.md)
+- [M8 进展分析架构](docs/architecture/M8_PROGRESS_ANALYTICS.md)
+- [M8 实施报告](docs/migration/M8_IMPLEMENTATION_REPORT.md)
+- [体验完善与联合回归](docs/migration/UX_FIX_FINAL_ACCEPTANCE.md)
 - [旧版比赛 Demo 脚本](docs/DEMO_SCRIPT.md)
 - [旧版 V0.1 验收清单](docs/V0.1_ACCEPTANCE.md)
 
@@ -292,5 +303,5 @@ learnpilot/
 - 知识图是辅助探索界面，不支持图编辑、坐标持久化、导出或完整键盘图遍历；层级树和知识列表提供主要的可访问浏览路径。
 - Mastery 是可解释的启发式掌握度估计，尚未进行教育测量学标定；没有已提交诊断或有效 Evidence 的课程会保持待评估状态。
 - 学习计划的任务时长是模板估计值；自适应练习依赖课程已有的已审核题目。
-- M8 Progress Analytics 尚未实现。
+- 掌握趋势仅覆盖已有快照；复习风险为启发式提示。历史重复证据未追溯清理，原始大资料故障及真实 provider 的相关质量与性能仍待验证。
 - 当前未启用 PPTX/OCR；MySQL 8 目标部署也尚未完成正式验收。

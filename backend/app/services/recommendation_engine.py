@@ -82,7 +82,38 @@ class RecommendationEngine:
             )
         return self._recommend_structural(context, plan_level)
 
-    def _recommend_personalized(self, context: RecommendationContext) -> RecommendationResult:
+    def recommend_continuation(self, context: RecommendationContext, excluded: set[int]) -> RecommendationResult | None:
+        """Select from the same resolved frontier, excluding only this learning flow's targets."""
+        original = self.recommend(context)
+        if original.availability_status != RecommendationAvailabilityStatus.AVAILABLE:
+            return None
+        if original.recommended_node_id not in excluded:
+            return original
+        personalized = self._recommend_personalized(context)
+        if personalized.availability_status == RecommendationAvailabilityStatus.AVAILABLE:
+            result = self._recommend_personalized(context, excluded)
+            if result.availability_status != RecommendationAvailabilityStatus.AVAILABLE:
+                return None
+            if original.plan_level != LearningPlanLevel.PERSONALIZED:
+                reasons = list(result.reason_codes)
+                if RecommendationReasonCode.INSUFFICIENT_EVIDENCE not in reasons:
+                    reasons.append(RecommendationReasonCode.INSUFFICIENT_EVIDENCE)
+                result = result.model_copy(
+                    update={
+                        "reason_codes": reasons,
+                        "required_assessment_node_ids": sorted(
+                            set(result.required_assessment_node_ids) | self._untrusted_node_ids(context)
+                        ),
+                        "limited_by_confidence": True,
+                    }
+                )
+            return result.model_copy(update={"plan_level": original.plan_level})
+        result = self._recommend_structural(context, original.plan_level, excluded)
+        return result if result.availability_status == RecommendationAvailabilityStatus.AVAILABLE else None
+
+    def _recommend_personalized(
+        self, context: RecommendationContext, excluded: set[int] | None = None
+    ) -> RecommendationResult:
         nodes = {item.knowledge_node_id: item for item in context.knowledge_nodes}
         states = {item.knowledge_node_id: item for item in context.mastery_states}
         candidates = {item.knowledge_node_id: item for item in context.candidates}
@@ -206,6 +237,14 @@ class RecommendationEngine:
                 limited_by_confidence=bool(all_required_assessments),
             )
 
+        selectable = set(frontier_targets) - (excluded or set())
+        if not selectable:
+            return self._unavailable_result(
+                context,
+                availability=RecommendationAvailabilityStatus.NO_ELIGIBLE_CANDIDATE,
+                reasons=[RecommendationReasonCode.NO_ELIGIBLE_CANDIDATE],
+                prerequisite_status=PrerequisiteEvaluationStatus.NOT_EVALUATED,
+            )
         scored = {
             node_id: self._score(
                 context=context,
@@ -213,10 +252,10 @@ class RecommendationEngine:
                 graph=graph,
                 state=states[node_id],
             )
-            for node_id in frontier_targets
+            for node_id in selectable
         }
         selected_id = min(
-            frontier_targets,
+            selectable,
             key=lambda node_id: (
                 -scored[node_id].total_priority,
                 -self._importance_rank(nodes[node_id].importance),
@@ -273,6 +312,7 @@ class RecommendationEngine:
         self,
         context: RecommendationContext,
         plan_level: LearningPlanLevel,
+        excluded: set[int] | None = None,
     ) -> RecommendationResult:
         nodes = {item.knowledge_node_id: item for item in context.knowledge_nodes}
         states = {item.knowledge_node_id: item for item in context.mastery_states}
@@ -370,11 +410,17 @@ class RecommendationEngine:
                 invalid_nodes=set(graph.invalid_nodes) | invalid_targets,
             )
 
-        structural_scores = {
-            node_id: self._structural_priority(context, node_id, graph) for node_id in frontier_targets
-        }
+        selectable = set(frontier_targets) - (excluded or set())
+        if not selectable:
+            return self._unavailable_result(
+                context,
+                availability=RecommendationAvailabilityStatus.NO_ELIGIBLE_CANDIDATE,
+                reasons=[RecommendationReasonCode.NO_ELIGIBLE_CANDIDATE],
+                prerequisite_status=PrerequisiteEvaluationStatus.NOT_EVALUATED,
+            )
+        structural_scores = {node_id: self._structural_priority(context, node_id, graph) for node_id in selectable}
         selected_id = min(
-            frontier_targets,
+            selectable,
             key=lambda node_id: (
                 -self._preliminary_need_rank(states[node_id], plan_level),
                 -structural_scores[node_id],

@@ -1,11 +1,11 @@
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 
-from backend.app.db.models import LearningEvidence, LearningSession, StudentKnowledgeState
-from backend.app.models import EvidenceSourceType
-from backend.app.services.learning_session_service import LearningSessionError
+from backend.app.db.models import LearningEvidence, LearningSession, Question, Response, StudentKnowledgeState
+from backend.app.models import EvidenceSourceType, QuestionValidationStatus
+from backend.app.services.learning_session_service import LearningSessionError, LearningSessionService
 from backend.app.services.learning_settlement_service import LearningSettlementService
 from backend.app.services.recommendation_context_service import RecommendationContextService
 from backend.tests.test_m7_4_adaptive_practice import (
@@ -65,6 +65,84 @@ def test_unfinished_and_other_user_rejected(practice_database):
     with factory() as db, pytest.raises(LearningSessionError) as captured:
         LearningSettlementService(db, _settings(url, "other@example.test")).complete_for_configured_user(session_id)
     assert captured.value.code == "SESSION_NOT_FOUND"
+
+
+def test_completed_details_restore_attempts_and_enforce_scope(practice_database):
+    from backend.app.db.models import Assessment
+
+    factory, ids, correct, url = practice_database
+    session_id = _finished(factory, ids, correct, url, wrong=True)
+    with factory() as db:
+        LearningSettlementService(db, _settings(url)).complete_for_configured_user(session_id)
+    with factory() as db:
+        result = LearningSessionService(db, _settings(url)).get_for_configured_user(session_id)
+        assert len(result.practice_attempts) == 5
+        first = result.practice_attempts[0]
+        assert first.stem and first.selected_options and first.correct_answer and first.explanation
+        assert first.is_correct is False
+    with factory() as db, pytest.raises(LearningSessionError) as captured:
+        LearningSessionService(db, _settings(url, "other@example.test")).get_for_configured_user(session_id)
+    assert captured.value.code == "SESSION_NOT_FOUND"
+    with factory() as db, db.begin():
+        item = db.get(LearningSession, session_id)
+        assessment = db.get(Assessment, item.practice_assessment_id)
+        assessment.course_id = ids["other_course"]
+    with factory() as db, pytest.raises(LearningSessionError) as captured:
+        LearningSessionService(db, _settings(url)).get_for_configured_user(session_id)
+    assert captured.value.code == "PRACTICE_SCOPE_MISMATCH"
+
+
+def test_continuation_checks_ownership_completion_and_course(practice_database):
+    factory, ids, correct, url = practice_database
+    session_id = _finished(factory, ids, correct, url)
+    with factory() as db, pytest.raises(LearningSessionError) as captured:
+        LearningSessionService(db, _settings(url)).continuation_for_configured_user(session_id, set())
+    assert captured.value.code == "SESSION_NOT_READY"
+    with factory() as db:
+        LearningSettlementService(db, _settings(url)).complete_for_configured_user(session_id)
+    with factory() as db, pytest.raises(LearningSessionError) as captured:
+        LearningSessionService(db, _settings(url, "other@example.test")).continuation_for_configured_user(
+            session_id, set()
+        )
+    assert captured.value.code == "SESSION_NOT_FOUND"
+    with factory() as db:
+        result = LearningSessionService(db, _settings(url)).continuation_for_configured_user(session_id, {ids["empty"]})
+        assert result.recommendation is None
+
+
+def test_single_question_resume_settlement_and_explicit_relearn(practice_database):
+    factory, ids, correct, url = practice_database
+    only_id = min(correct)
+    with factory() as db, db.begin():
+        db.execute(
+            update(Question)
+            .where(Question.course_id == ids["course"], Question.id != only_id)
+            .values(validation_status=QuestionValidationStatus.REJECTED)
+        )
+    session_id = _ready_session(factory, ids, url)
+    question = _next(factory, url, session_id).current_question
+    assert question is not None and question.question_id == only_id
+    first = _answer(factory, url, session_id, question.assessment_question_id, correct[only_id])
+    replay = _answer(factory, url, session_id, question.assessment_question_id, correct[only_id])
+    assert first.attempts[0].attempt_id == replay.attempts[0].attempt_id
+    assert _next(factory, url, session_id).status == "completed"
+    assert _next(factory, url, session_id).status == "completed"
+    with factory() as db:
+        LearningSettlementService(db, _settings(url)).complete_for_configured_user(session_id)
+    with factory() as db:
+        service = LearningSessionService(db, _settings(url))
+        assert service.get_for_configured_user(session_id).practice_attempts[0].question_id == only_id
+        assert service.get_for_configured_user(session_id).practice_attempts[0].question_id == only_id
+        assert service.continuation_for_configured_user(session_id, {ids["empty"]}).recommendation is None
+    with factory() as db:
+        assert db.scalar(select(func.count()).select_from(Response)) == 1
+        assert db.scalar(select(func.count()).select_from(LearningEvidence)) == 1
+        assert db.scalar(select(func.count()).select_from(LearningSession)) == 1
+
+    # Explicit relearning remains available; it is a new session, not a retry.
+    relearn_id = _ready_session(factory, ids, url)
+    assert relearn_id != session_id
+    assert _next(factory, url, relearn_id).current_question.question_id == only_id
 
 
 def test_failure_rolls_back_and_recommendation_failure_can_retry(practice_database, monkeypatch):

@@ -31,6 +31,7 @@ from backend.app.schemas.question_generation import (
     QuestionBankListSchema,
     QuestionBankNodeSchema,
     QuestionBankReadinessSchema,
+    QuestionReviewEligibilitySchema,
     QuestionReviewResponseSchema,
 )
 from backend.app.services.assessment_assembly_service import AssessmentAssemblyService
@@ -104,6 +105,7 @@ class DiagnosticQuestionBankService:
         return QuestionBankReadinessSchema(
             course_id=course_id,
             validated_count=status_counts[QuestionValidationStatus.VALIDATED],
+            available_questions=readiness.available_questions,
             pending_count=status_counts[QuestionValidationStatus.PENDING],
             rejected_count=status_counts[QuestionValidationStatus.REJECTED],
             covered_core_nodes=readiness.covered_knowledge_nodes,
@@ -126,6 +128,22 @@ class DiagnosticQuestionBankService:
             questions = self.questions.list_for_course_owner(course_id, owner_id, status)
             items = [self._item(question) for question in questions]
         return QuestionBankListSchema(count=len(items), questions=items)
+
+    def review_eligibility(self, course_id: int) -> QuestionReviewEligibilitySchema:
+        owner_id = self._owner_id()
+        with self.session.begin():
+            self._require_owned_course(owner_id, course_id)
+            pending = self.questions.list_for_course_owner(course_id, owner_id, QuestionValidationStatus.PENDING)
+            eligible_ids = []
+            for question in pending:
+                try:
+                    self._validate_for_publication(owner_id, course_id, question)
+                except DiagnosticQuestionBankError:
+                    continue
+                eligible_ids.append(question.id)
+            return QuestionReviewEligibilitySchema(
+                eligible_ids=eligible_ids, needs_review_count=len(pending) - len(eligible_ids)
+            )
 
     def generate_pending(
         self,

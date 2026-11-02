@@ -7,6 +7,7 @@ import {
   approveDiagnosticQuestion,
   fetchDiagnosticQuestions,
   fetchQuestionBankReadiness,
+  fetchQuestionReviewEligibility,
   prepareCourseDiagnosticQuestions,
   rejectDiagnosticQuestion,
 } from '@/services/diagnostics';
@@ -27,6 +28,7 @@ vi.mock('@/services/diagnostics', () => ({
   approveDiagnosticQuestion: vi.fn(),
   fetchDiagnosticQuestions: vi.fn(),
   fetchQuestionBankReadiness: vi.fn(),
+  fetchQuestionReviewEligibility: vi.fn(),
   prepareCourseDiagnosticQuestions: vi.fn(),
   rejectDiagnosticQuestion: vi.fn(),
 }));
@@ -77,6 +79,7 @@ function readiness(overrides: Partial<QuestionBankReadiness> = {}): QuestionBank
   return {
     course_id: 7,
     validated_count: 0,
+    available_questions: 0,
     pending_count: 0,
     rejected_count: 0,
     covered_core_nodes: 0,
@@ -179,6 +182,7 @@ describe('QuestionBankPanel', () => {
     vi.clearAllMocks();
     vi.mocked(fetchQuestionBankReadiness).mockResolvedValue(readiness());
     vi.mocked(fetchDiagnosticQuestions).mockResolvedValue({ count: 0, questions: [] });
+    vi.mocked(fetchQuestionReviewEligibility).mockResolvedValue({ eligible_ids: [], needs_review_count: 0 });
     vi.mocked(fetchKnowledgeBuildStatus).mockResolvedValue(buildStatus());
   });
 
@@ -374,6 +378,7 @@ describe('QuestionBankPanel', () => {
     vi.mocked(fetchQuestionBankReadiness).mockResolvedValue(
       readiness({
         validated_count: 1,
+        available_questions: 1,
         pending_count: 0,
         covered_core_nodes: 1,
         required_nodes: [
@@ -496,6 +501,7 @@ describe('QuestionBankPanel', () => {
     vi.mocked(fetchQuestionBankReadiness).mockResolvedValue(
       readiness({
         validated_count: 8,
+        available_questions: 8,
         covered_core_nodes: 8,
         can_start: true,
         reason_code: null,
@@ -523,4 +529,58 @@ describe('QuestionBankPanel', () => {
     await flushPromises();
     expect(wrapper.text()).toContain('当前覆盖目标');
   });
+
+  it('shows the real shortage and opens the review area', async () => {
+    vi.mocked(fetchQuestionBankReadiness).mockResolvedValue(readiness({
+      validated_count: 7, available_questions: 6, pending_count: 2, required_questions: 8,
+    }));
+    vi.mocked(fetchQuestionReviewEligibility).mockResolvedValue({ eligible_ids: [91], needs_review_count: 1 });
+    const wrapper = await mountPanel();
+    expect(wrapper.text()).toContain('目前有 6 道可用题，至少还需要 2 道');
+    await button(wrapper, '去审核题目').trigger('click');
+    expect(wrapper.text()).toContain('当前校验可确认 1 题，另有 1 题需要检查');
+  });
+
+  it('reports actual partial results and refreshes authoritative status after batch review', async () => {
+    const second = { ...pendingQuestion, question_id: 92, stem: '第二题' };
+    const invalid = { ...pendingQuestion, question_id: 93, stem: '待检查题目' };
+    vi.mocked(fetchQuestionBankReadiness)
+      .mockResolvedValueOnce(readiness({ pending_count: 3 }))
+      .mockResolvedValue(readiness({ pending_count: 2, validated_count: 1, available_questions: 1 }));
+    vi.mocked(fetchDiagnosticQuestions)
+      .mockResolvedValueOnce({ count: 3, questions: [pendingQuestion, second, invalid] })
+      .mockResolvedValue({ count: 3, questions: [{ ...pendingQuestion, validation_status: 'validated' }, second, invalid] });
+    vi.mocked(fetchQuestionReviewEligibility)
+      .mockResolvedValueOnce({ eligible_ids: [91, 92], needs_review_count: 1 })
+      .mockResolvedValue({ eligible_ids: [92], needs_review_count: 1 });
+    const pending = deferred<{ question: QuestionBankItem }>();
+    vi.mocked(approveDiagnosticQuestion).mockReturnValueOnce(pending.promise)
+      .mockRejectedValueOnce(new ApiError('状态改变', { code: 'QUESTION_INVALID_STATE', status: 409 }));
+    const wrapper = await mountPanel();
+    await button(wrapper, '去审核题目').trigger('click');
+    expect(wrapper.text()).toContain('当前校验可确认 2 题，另有 1 题需要检查');
+    await button(wrapper, '确认可用题目').trigger('click');
+    expect(wrapper.text()).toContain('不保证学科正确性');
+    await button(wrapper, '确认审核').trigger('click');
+    expect(approveDiagnosticQuestion).toHaveBeenCalledTimes(1);
+    expect(button(wrapper, '确认可用题目').attributes('disabled')).toBeDefined();
+    pending.resolve({ question: { ...pendingQuestion, validation_status: 'validated' } });
+    await flushPromises();
+    expect(approveDiagnosticQuestion).toHaveBeenCalledTimes(2);
+    expect(wrapper.text()).toContain('已确认 1 题，2 题未确认');
+    expect(wrapper.text()).toContain('已通过');
+    expect(wrapper.text()).toContain('待检查题目');
+    expect(fetchQuestionBankReadiness).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not offer a count shortage when only coverage blocks readiness', async () => {
+    vi.mocked(fetchQuestionBankReadiness).mockResolvedValue(readiness({
+      validated_count: 8, available_questions: 8, required_questions: 8, pending_count: 1,
+    }));
+    const wrapper = await mountPanel();
+    expect(wrapper.text()).toContain('仍需满足知识点覆盖要求');
+    expect(wrapper.text()).not.toContain('至少还需要');
+    expect(wrapper.text()).not.toContain('诊断已就绪');
+  });
+
 });

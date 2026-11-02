@@ -144,7 +144,7 @@ void diagnostic.load();
             <div class="question-meta"><span>第 {{ diagnostic.currentIndex.value + 1 }} 题</span><span class="type-badge">{{ typeLabel(diagnostic.currentQuestion.value.question_type) }}</span><span class="save-indicator" :class="`save-indicator--${diagnostic.saveStates[diagnostic.currentQuestion.value.assessment_question_id] ?? 'idle'}`">{{ saveLabel(diagnostic.currentQuestion.value.assessment_question_id) }}</span></div>
             <h2>{{ diagnostic.currentQuestion.value.stem }}</h2>
             <el-radio-group v-if="diagnostic.currentQuestion.value.question_type !== 'multiple_choice'" :model-value="currentAnswer[0]" :disabled="diagnostic.isReadOnly.value" class="answer-options" @change="selectSingle">
-              <el-radio v-for="option in diagnostic.currentQuestion.value.options" :key="option.key" :value="option.key" border><span class="option-key">{{ option.key }}</span>{{ option.text }}</el-radio>
+              <el-radio v-for="option in diagnostic.currentQuestion.value.options" :key="option.key" :value="option.key" border><span v-if="diagnostic.currentQuestion.value.question_type !== 'true_false'" class="option-key">{{ option.key }}</span><span v-if="diagnostic.currentQuestion.value.question_type === 'true_false'" class="boolean-option">{{ option.key === 'TRUE' ? '正确' : '错误' }}</span><template v-else>{{ option.text }}</template></el-radio>
             </el-radio-group>
             <el-checkbox-group v-else :model-value="currentAnswer" :disabled="diagnostic.isReadOnly.value" class="answer-options" @change="selectMultiple">
               <el-checkbox v-for="option in diagnostic.currentQuestion.value.options" :key="option.key" :value="option.key" border><span class="option-key">{{ option.key }}</span>{{ option.text }}</el-checkbox>
@@ -223,6 +223,7 @@ void diagnostic.load();
 .answer-options :deep(.el-radio), .answer-options :deep(.el-checkbox) { width: 100%; min-width: 0; max-width: 100%; min-height: 54px; height: auto; margin: 0; padding: 13px 16px; align-items: flex-start; box-sizing: border-box; white-space: normal; }
 .answer-options :deep(.el-radio__input), .answer-options :deep(.el-checkbox__input) { flex: 0 0 auto; margin-top: 3px; }
 .answer-options :deep(.el-radio__label), .answer-options :deep(.el-checkbox__label) { min-width: 0; max-width: 100%; padding-right: 0; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+.boolean-option { white-space: nowrap; }
 .option-key { display: inline-grid; width: 24px; height: 24px; margin-right: 9px; place-items: center; border-radius: 5px; color: var(--lp-text-secondary); background: var(--lp-surface-subtle); font-size: 12px; font-weight: 700; }
 .save-error { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 16px; padding: 10px 12px; border-radius: 7px; color: var(--lp-danger); background: var(--lp-danger-soft); }
 .question-actions { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; margin-top: 38px; padding-top: 18px; border-top: 1px solid var(--lp-border); }

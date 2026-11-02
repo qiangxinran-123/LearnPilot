@@ -22,6 +22,7 @@ class KnowledgeNode(TimestampMixin, Base):
     __table_args__ = (
         UniqueConstraint("course_id", "id", name="uq_knowledge_nodes_course_id_id"),
         Index("ix_knowledge_nodes_course_normalized_name", "course_id", "normalized_name"),
+        Index("ix_knowledge_nodes_course_active", "course_id", "is_active"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)

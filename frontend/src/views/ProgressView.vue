@@ -24,6 +24,7 @@ const overview = ref<ProgressOverview | null>(null);
 const knowledge = ref<ProgressKnowledge | null>(null);
 const modelNodes = ref<KnowledgeNode[]>([]);
 const selectedParent = ref('all');
+const comparisonExpanded = ref(false);
 const loading = ref(false);
 const error = ref('');
 let requestVersion = 0;
@@ -51,6 +52,12 @@ const visibleNodes = computed(() => {
   return [...filtered].sort((a, b) => a.node_id - b.node_id);
 });
 const hasIsolated = computed(() => knowledge.value?.nodes.some((node) => node.parent_ids.length === 0) ?? false);
+const displayedNodes = computed(() => comparisonExpanded.value
+  ? visibleNodes.value
+  : visibleNodes.value.filter((node) => node.mastery_score !== null).slice(0, 6));
+const hasHiddenNodes = computed(() => displayedNodes.value.length < visibleNodes.value.length);
+watch(selectedParent, () => { comparisonExpanded.value = false; });
+
 
 function score(value: string | null): string {
   return value === null ? '暂无数据' : `${Number(value).toFixed(2)}%`;
@@ -73,6 +80,7 @@ async function load(): Promise<void> {
   knowledge.value = null;
   modelNodes.value = [];
   selectedParent.value = 'all';
+  comparisonExpanded.value = false;
   error.value = '';
   if (courseId === null) { loading.value = false; return; }
   loading.value = true;
@@ -106,7 +114,7 @@ onMounted(() => { void courses.loadCourses(); });
 
 <template>
   <section class="page-view progress-page">
-    <PageHeader title="学习进展" description="从已有学习证据了解掌握情况与下一步重点。" />
+    <PageHeader title="学习进展" description="查看掌握情况、学习变化和需要巩固的知识点。" />
     <div class="progress-course">
       <div><p>当前课程</p><strong>{{ courses.courses.find((course) => course.id === selectedCourseId)?.name ?? '请选择课程' }}</strong></div>
       <el-select v-if="courses.courses.length" v-model="selectedCourseId" aria-label="选择课程">
@@ -136,6 +144,7 @@ onMounted(() => { void courses.loadCourses(); });
         <p>按可评估的叶子知识点统计，尚未评估包含证据不足或状态过期的节点。</p>
         <div class="status-list"><span v-for="status in statusOrder" :key="status"><i :class="'status-' + status"></i>{{ statusLabels[status] }} <b>{{ overview.status_counts[status] }}</b></span></div>
       </section>
+      <ProgressHistoryPanel v-if="selectedCourseId !== null" :course-id="selectedCourseId">
       <section class="progress-panel comparison">
         <div class="section-head">
           <div><h2>知识点掌握对比</h2><p>仅比较叶子知识点；选择模块查看其直接子节点。</p></div>
@@ -145,9 +154,9 @@ onMounted(() => { void courses.loadCourses(); });
             <el-option v-for="parent in parentOptions" :key="parent.id" :label="parent.name" :value="String(parent.id)" />
           </el-select>
         </div>
-        <p v-if="!visibleNodes.length" class="empty-note">暂无可比较的知识点。</p>
+        <p v-if="!displayedNodes.length" class="empty-note">{{ visibleNodes.length ? '当前范围暂无已评估的知识点。' : '暂无可比较的知识点。' }}</p>
         <div v-else class="chart" aria-label="知识点掌握度横向对比">
-          <div v-for="node in visibleNodes" :key="node.node_id" class="chart-row">
+          <div v-for="node in displayedNodes" :key="node.node_id" class="chart-row">
             <button class="node-link" @click="openNode(node)">{{ node.name }}</button>
             <div class="bar-track" :aria-label="`${node.name}：${score(node.mastery_score)}`">
               <div v-if="node.mastery_score !== null" class="bar-fill" :style="{ width: `${Number(node.mastery_score)}%` }"></div>
@@ -156,20 +165,24 @@ onMounted(() => { void courses.loadCourses(); });
             <span>{{ nodeStatus(node) }} · 置信度：{{ confidenceLabels[node.confidence_level] }}</span>
           </div>
         </div>
+        <el-button v-if="hasHiddenNodes || comparisonExpanded" class="comparison-toggle" text :aria-expanded="comparisonExpanded" @click="comparisonExpanded = !comparisonExpanded">
+          {{ comparisonExpanded ? '收起' : `查看全部（共 ${visibleNodes.length} 个）` }}
+        </el-button>
       </section>
       <ReviewRiskPanel v-if="selectedCourseId !== null" :course-id="selectedCourseId" :weak-nodes="overview.weak_nodes" :evaluated-count="overview.evaluated_node_count" />
-      <ProgressHistoryPanel v-if="selectedCourseId !== null" :course-id="selectedCourseId" />
+      </ProgressHistoryPanel>
     </template>
   </section>
 </template>
 
 <style scoped>
-.progress-page { display: grid; gap: 22px; }
+.progress-page { display: grid; gap: 18px; }
 .progress-course, .progress-panel { background: var(--el-bg-color, #fff); border: 1px solid #e4eaf1; border-radius: 14px; padding: 24px; }
 .progress-course, .section-head { display: flex; justify-content: space-between; align-items: center; gap: 24px; }
 .progress-course p, .progress-panel p { color: #66758a; margin: 8px 0 0; line-height: 1.6; }
 .progress-course strong { font-size: 18px; }
-.progress-course .el-select, .section-head .el-select { width: 230px; flex-shrink: 0; }
+.progress-course .el-select { width: min(280px, 100%); flex-shrink: 0; }
+.section-head .el-select { width: 230px; flex-shrink: 0; }
 .progress-panel h2 { color: #233851; margin: 0; font-size: 17px; }
 .summary-grid { display: grid; grid-template-columns: 1.2fr 1fr; gap: 18px; }
 .summary-score { display: block; font-size: 42px; color: #315f9b; margin-top: 14px; }
@@ -186,6 +199,7 @@ onMounted(() => { void courses.loadCourses(); });
 .bar-track { height: 10px; background: #eaf0f6; border-radius: 8px; overflow: hidden; }
 .bar-fill { height: 100%; background: #5d83b0; border-radius: inherit; }
 .chart-row strong { color: #30455f; }
+.comparison-toggle { margin-top: 16px; }
 .weak-row { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 20px 0; border-top: 1px solid #edf1f5; }
 .weak-row:first-of-type { margin-top: 18px; }
 .weak-row p { margin-top: 5px; }

@@ -10,6 +10,8 @@ M6 shows the persisted course learning plan on Dashboard and Learn, including re
 
 M7 opens a recoverable Learning Session from the plan, with cited course content, an AI Tutor, adaptive practice and a completion summary. The summary displays saved practice results, evidence, mastery changes and recommendation refresh status.
 
+M8 adds a course Progress view with mastery overview and comparison, recorded trends, diagnosis and learning history, and evidence-based review-risk signals. Follow-up work improves learning and diagnosis flows, question review and course switching.
+
 ## Runtime
 
 Tested with Node.js `22.22.2` and npm `10.9.7`. Supported Node range: `>=22.12.0 <25`.
@@ -78,7 +80,7 @@ npm run build
 
 ## Verification
 
-The M7 final acceptance report records typecheck, lint, production build, and the full Vitest suite (`181/181`) passing, alongside an isolated Chromium learning flow. This release operation does not rerun those checks. See [M7 final acceptance](../docs/migration/M7_6_FINAL_ACCEPTANCE_REPORT.md) for the scope and limitations.
+The M8 follow-up regression report records typecheck, lint, production build and the full Vitest suite (`232/232`) passing. This release operation does not rerun those checks. See [the joint regression report](../docs/migration/UX_FIX_FINAL_ACCEPTANCE.md) for the scope and limitations; final M8 acceptance has not been confirmed.
 
 A real-provider browser E2E used two self-authored TXT materials and the course-level build flow. It produced a persisted model with 12 nodes, 3 `CONTAINS` edges and 13 `PREREQUISITE` edges, then verified node sources, edge evidence, filtering, pan/zoom/fit/reset and responsive behavior at 1440/1280/1024 px. No credential, provider endpoint or complete user material is recorded in the repository.
 

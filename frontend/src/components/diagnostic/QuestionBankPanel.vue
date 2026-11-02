@@ -7,6 +7,7 @@ import {
   approveDiagnosticQuestion,
   fetchDiagnosticQuestions,
   fetchQuestionBankReadiness,
+  fetchQuestionReviewEligibility,
   prepareCourseDiagnosticQuestions,
   rejectDiagnosticQuestion,
 } from '@/services/diagnostics';
@@ -15,6 +16,7 @@ import { fetchKnowledgeBuildStatus, startKnowledgeBuild } from '@/services/knowl
 import type {
   QuestionBankItem,
   QuestionBankReadiness,
+  QuestionReviewEligibility,
   QuestionDifficulty,
   QuestionValidationStatus,
 } from '@/types/diagnostic';
@@ -33,6 +35,11 @@ const questionBankOpen = ref(false);
 const reviewQuestion = ref<QuestionBankItem | null>(null);
 const isPreparing = ref(false);
 const reviewingAction = ref<'approve' | 'reject' | null>(null);
+const reviewEligibility = ref<QuestionReviewEligibility | null>(null);
+const eligibilityError = ref('');
+const batchConfirmOpen = ref(false);
+const isBatchReviewing = ref(false);
+const batchResult = ref('');
 const actionError = ref('');
 const synchronizationState = ref<'idle' | 'running' | 'completed' | 'partial' | 'failed'>('idle');
 const synchronizationError = ref('');
@@ -51,6 +58,7 @@ const missingCoverage = computed(() =>
 const hasPreparationTargets = computed(() =>
   Boolean(readiness.value?.required_nodes.some((node) => !node.has_validated_question && !node.has_pending_question)),
 );
+const questionShortage = computed(() => Math.max((readiness.value?.required_questions ?? 0) - (readiness.value?.available_questions ?? 0), 0));
 const preparationLabel = computed(() => readiness.value?.validated_count === 0 ? '准备诊断' : '补充诊断题');
 
 function statusLabel(status: QuestionValidationStatus): string {
@@ -91,6 +99,18 @@ async function loadQuestionBank(): Promise<void> {
     if (disposed || request !== requestVersion || requestedCourseId !== props.courseId) return;
     readiness.value = bank;
     questions.value = list.questions;
+    reviewEligibility.value = null;
+    eligibilityError.value = '';
+    if (bank.pending_count > 0) {
+      try {
+        const preview = await fetchQuestionReviewEligibility(requestedCourseId);
+        if (disposed || request !== requestVersion || requestedCourseId !== props.courseId) return;
+        reviewEligibility.value = preview;
+      } catch {
+        if (disposed || request !== requestVersion || requestedCourseId !== props.courseId) return;
+        eligibilityError.value = '批量资格检查失败，请刷新后重试；仍可逐题审核。';
+      }
+    }
     knowledgeStatus.value = build;
     state.value = 'ready';
     if (build.state === 'running' && synchronizationState.value !== 'running') {
@@ -209,7 +229,7 @@ function openReview(question: QuestionBankItem): void {
 }
 async function submitReview(action: 'approve' | 'reject'): Promise<void> {
   const question = reviewQuestion.value;
-  if (!question || question.validation_status !== 'pending' || reviewingAction.value) return;
+  if (!question || question.validation_status !== 'pending' || reviewingAction.value || isBatchReviewing.value) return;
   reviewingAction.value = action;
   actionError.value = '';
   try {
@@ -222,6 +242,35 @@ async function submitReview(action: 'approve' | 'reject'): Promise<void> {
     actionError.value = friendlyError(error);
   } finally {
     reviewingAction.value = null;
+  }
+}
+async function confirmBatchReview(): Promise<void> {
+  if (isBatchReviewing.value || reviewingAction.value || !reviewEligibility.value) return;
+  const courseId = props.courseId;
+  const version = requestVersion;
+  const ids = [...reviewEligibility.value.eligible_ids];
+  const pendingCount = readiness.value?.pending_count ?? ids.length;
+  isBatchReviewing.value = true;
+  batchResult.value = '';
+  batchConfirmOpen.value = false;
+  let succeeded = 0;
+  try {
+    for (const id of ids) {
+      if (disposed || version !== requestVersion || courseId !== props.courseId) return;
+      try {
+        await approveDiagnosticQuestion(courseId, id);
+        succeeded += 1;
+      } catch {
+        // A failed or interrupted request is not counted as confirmed.
+      }
+    }
+    if (disposed || version !== requestVersion || courseId !== props.courseId) return;
+    await loadQuestionBank();
+    if (disposed || courseId !== props.courseId) return;
+    batchResult.value = `已确认 ${succeeded} 题，${pendingCount - succeeded} 题未确认。`;
+    if (state.value !== 'ready') ElMessage.warning('题库状态刷新失败，请重新加载核对审核结果。');
+  } finally {
+    isBatchReviewing.value = false;
   }
 }
 function closePreparation(open: boolean): void {
@@ -238,6 +287,10 @@ watch(() => props.courseId, () => {
   preparationOpen.value = false;
   questionBankOpen.value = false;
   reviewQuestion.value = null;
+  reviewEligibility.value = null;
+  eligibilityError.value = '';
+  batchConfirmOpen.value = false;
+  batchResult.value = '';
   synchronizationOpen.value = false;
   synchronizationState.value = 'idle';
   synchronizationError.value = '';
@@ -251,7 +304,7 @@ onBeforeUnmount(() => { disposed = true; requestVersion += 1; });
   <section class="question-bank" aria-labelledby="question-bank-title">
     <header class="question-bank__header">
       <div><h2 id="question-bank-title">{{ courseName }} · 诊断准备</h2><p>题库按当前课程知识结构规划；新题经人工审核后才会用于诊断。</p></div>
-      <el-button v-if="state !== 'loading'" plain :icon="RefreshRight" @click="loadQuestionBank">刷新状态</el-button>
+      <el-button v-if="state !== 'loading'" plain :icon="RefreshRight" :disabled="isBatchReviewing" @click="loadQuestionBank">刷新状态</el-button>
     </header>
     <el-skeleton v-if="state === 'loading'" :rows="5" animated />
     <div v-else-if="state === 'error'" class="question-bank__error" role="alert">
@@ -295,10 +348,14 @@ onBeforeUnmount(() => { disposed = true; requestVersion += 1; });
           <strong>{{ readiness.can_start ? '诊断已就绪' : '题库尚需准备' }}</strong>
           <p v-if="readiness.can_start">当前题量与知识点覆盖满足诊断启动条件。</p>
           <p v-else-if="readiness.total_core_nodes === 0">当前课程还没有可诊断的知识结构。</p>
-          <p v-else>至少需要 {{ readiness.minimum_required }} 道合格题，并满足对应知识点覆盖要求。</p>
+          <p v-else-if="questionShortage > 0">目前有 {{ readiness.available_questions }} 道可用题，至少还需要 {{ questionShortage }} 道；还需满足知识点覆盖要求。</p>
+          <p v-else>题目数量已达到当前要求，仍需满足知识点覆盖要求。</p>
         </div></div>
         <dl class="question-bank__metrics">
-          <div><dt>有效题目</dt><dd>{{ readiness.validated_count }}</dd></div>
+          <div><dt>有效题目</dt><dd>{{ readiness.available_questions }}</dd></div>
+          <div><dt>已确认</dt><dd>{{ readiness.validated_count }}</dd></div>
+          <div><dt>当前需要</dt><dd>{{ readiness.required_questions }}</dd></div>
+          <div><dt>题库总数</dt><dd>{{ questions.length }}</dd></div>
           <div><dt>知识点覆盖</dt><dd>{{ readiness.covered_core_nodes }} / {{ readiness.total_core_nodes }}</dd></div>
           <div><dt>尚未覆盖</dt><dd>{{ missingCoverage }}</dd></div>
           <div><dt>待人工审核</dt><dd>{{ readiness.pending_count }}</dd></div>
@@ -307,7 +364,8 @@ onBeforeUnmount(() => { disposed = true; requestVersion += 1; });
           <el-button v-if="readiness.can_start" type="primary" size="large" @click="emit('start')">开始诊断</el-button>
           <el-button v-else-if="readiness.total_core_nodes === 0" type="primary" plain @click="emit('knowledge')">前往课程知识结构</el-button>
           <el-button v-else-if="hasPreparationTargets" type="primary" size="large" :disabled="isPreparing" @click="preparationOpen = true">{{ preparationLabel }}</el-button>
-          <p v-else-if="readiness.pending_count > 0">请先审核下方待处理题目，审核结果会更新诊断准备状态。</p>
+          <p v-else-if="readiness.pending_count > 0">请先审核待处理题目，审核结果会更新诊断准备状态。</p>
+          <el-button v-if="!readiness.can_start && readiness.pending_count > 0" plain @click="questionBankOpen = true">去审核题目</el-button>
         </div>
       </div>
       <p v-if="actionError" class="question-bank__action-error" role="alert">{{ actionError }}</p>
@@ -344,10 +402,22 @@ onBeforeUnmount(() => { disposed = true; requestVersion += 1; });
       </template>
     </el-dialog>
     <el-dialog v-model="questionBankOpen" :title="`${courseName} · 题库记录`" width="min(860px, 94vw)" destroy-on-close>
+      <section class="batch-review" aria-label="批量审核">
+        <p v-if="reviewEligibility">当前校验可确认 {{ reviewEligibility.eligible_ids.length }} 题，另有 {{ reviewEligibility.needs_review_count }} 题需要检查。</p>
+        <p v-else-if="eligibilityError" role="alert">{{ eligibilityError }}</p>
+        <p v-else>当前没有待审核题目。</p>
+        <p>校验只检查结构和来源，不能保证学科内容正确；请先检查题目。</p>
+        <el-button type="primary" :disabled="!reviewEligibility?.eligible_ids.length || isBatchReviewing || Boolean(reviewingAction)" :loading="isBatchReviewing" @click="batchConfirmOpen = true">确认可用题目</el-button>
+        <p v-if="batchResult" role="status">{{ batchResult }}</p>
+      </section>
       <section class="question-bank__questions question-bank__questions--dialog" aria-label="完整题库记录">
-        <article v-for="question in questions" :key="question.question_id" class="question-row"><div><p>{{ question.knowledge_node_name ?? '关联知识点异常' }}</p><h4>{{ question.stem }}</h4></div><el-tag :type="question.validation_status === 'validated' ? 'success' : question.validation_status === 'pending' ? 'warning' : 'info'" effect="plain">{{ statusLabel(question.validation_status) }}</el-tag><el-button plain @click="openReview(question)">{{ question.validation_status === 'pending' ? '查看并审核' : '查看详情' }}</el-button></article>
+        <article v-for="question in questions" :key="question.question_id" class="question-row"><div><p>{{ question.knowledge_node_name ?? '关联知识点异常' }}</p><h4>{{ question.stem }}</h4></div><el-tag :type="question.validation_status === 'validated' ? 'success' : question.validation_status === 'pending' ? 'warning' : 'info'" effect="plain">{{ statusLabel(question.validation_status) }}</el-tag><el-button plain :disabled="isBatchReviewing" @click="openReview(question)">{{ question.validation_status === 'pending' ? '查看并审核' : '查看详情' }}</el-button></article>
         <p v-if="questions.length === 0" class="question-bank__empty">当前课程还没有诊断题目。</p>
       </section>
+    </el-dialog>
+    <el-dialog v-model="batchConfirmOpen" title="确认可用题目" width="min(520px, 92vw)">
+      <p>将确认当前通过结构、关联和来源校验的 {{ reviewEligibility?.eligible_ids.length ?? 0 }} 道待审核题。请确认已检查题目内容；这些校验不保证学科正确性。</p>
+      <template #footer><el-button @click="batchConfirmOpen = false">取消</el-button><el-button type="primary" :disabled="isBatchReviewing" @click="confirmBatchReview">确认审核</el-button></template>
     </el-dialog>
     <el-dialog :model-value="Boolean(reviewQuestion)" title="诊断题审核" width="min(760px, 94vw)" :close-on-click-modal="!reviewingAction" :show-close="!reviewingAction" @update:model-value="closeReview">
       <article v-if="reviewQuestion" class="review-detail">
@@ -389,6 +459,8 @@ onBeforeUnmount(() => { disposed = true; requestVersion += 1; });
 .question-bank__coverage ul { display: flex; flex-wrap: wrap; gap: .5rem; padding: 0; list-style: none; }
 .question-bank__coverage li { display: flex; align-items: center; gap: .5rem; padding: .55rem .7rem; border: 1px solid var(--lp-border); border-radius: 10px; background: var(--lp-surface); }
 .question-bank__records-entry { padding-top: 1rem; border-top: 1px solid var(--lp-border); }
+.batch-review { padding: 1rem; border: 1px solid var(--lp-border); border-radius: 10px; background: var(--lp-surface-subtle); }
+.batch-review p { color: var(--lp-text-secondary); line-height: 1.6; }
 .question-bank__questions--dialog { max-height: 62vh; padding-right: .25rem; overflow-y: auto; }
 .question-row { margin-top: .65rem; padding: .8rem; border: 1px solid var(--lp-border); border-radius: 12px; background: var(--lp-surface); }
 .question-row > div { min-width: 0; flex: 1; }.question-row p { margin: 0; color: var(--lp-primary); font-size: .76rem; font-weight: 700; }.question-row h4 { max-width:100%; margin-top:.25rem; font-size:.92rem; font-weight:600; white-space:pre-wrap; overflow-wrap:anywhere; }

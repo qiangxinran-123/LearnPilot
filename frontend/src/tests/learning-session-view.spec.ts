@@ -6,7 +6,9 @@ import TutorPanel from '@/components/learning/TutorPanel.vue';
 import {
   cancelLearningSession,
   completeLearningSession,
+  createLearningSession,
   fetchLearningSession,
+  fetchSessionContinuation,
   fetchLearningSessionContent,
   fetchTutorMessages,
   nextPracticeQuestion,
@@ -18,7 +20,7 @@ import type { AdaptivePractice, LearningContent, LearningSession } from '@/types
 
 const routing = vi.hoisted(() => ({
   push: vi.fn(),
-  route: { params: { sessionId: '91' } as Record<string, string> },
+  route: { params: { sessionId: '91' } as Record<string, string>, query: {} as Record<string, string> },
 }));
 
 vi.mock('vue-router', async () => {
@@ -33,6 +35,8 @@ vi.mock('@/services/learningSessions', () => ({
   cancelLearningSession: vi.fn(),
   completeLearningSession: vi.fn(),
   fetchLearningSession: vi.fn(),
+  fetchSessionContinuation: vi.fn(),
+  createLearningSession: vi.fn(),
   fetchLearningSessionContent: vi.fn(),
   fetchTutorMessages: vi.fn(),
   nextPracticeQuestion: vi.fn(),
@@ -196,13 +200,15 @@ describe('M7-1 learning session workspace', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     routing.route.params = { sessionId: '91' };
+    routing.route.query = {};
     vi.mocked(fetchLearningSession).mockResolvedValue(structuredClone(baseSession));
     vi.mocked(fetchLearningSessionContent).mockResolvedValue(structuredClone(baseContent));
     vi.mocked(fetchTutorMessages).mockResolvedValue({ session_id: 91, messages: [] });
     vi.mocked(nextPracticeQuestion).mockResolvedValue(structuredClone(basePractice));
+    vi.mocked(fetchSessionContinuation).mockResolvedValue({ recommendation: null });
   });
 
-  it('loads server state and renders the frozen three phases without fabricated outcomes', async () => {
+  it('starts with concept content and shows the three actual learning steps', async () => {
     const wrapper = mount(LearningSessionView);
     expect(wrapper.text()).not.toContain('集合映射');
     await flushPromises();
@@ -211,10 +217,10 @@ describe('M7-1 learning session workspace', () => {
     expect(wrapper.text()).toContain('离散数学');
     expect(wrapper.text()).toContain('集合映射');
     expect(wrapper.text()).toContain('概念理解');
-    expect(wrapper.text()).toContain('示例讲解');
     expect(wrapper.text()).toContain('针对练习');
-    expect(wrapper.text()).toContain('完成前两个学习阶段后');
-    expect(wrapper.text()).toContain('根据连续作答表现调整难度');
+    expect(wrapper.text()).toContain('学习反馈');
+    expect(wrapper.text()).toContain('开始练习');
+    expect(nextPracticeQuestion).not.toHaveBeenCalled();
     expect(wrapper.text()).toContain('AI Tutor');
     expect(sendTutorMessage).not.toHaveBeenCalled();
   });
@@ -278,18 +284,22 @@ describe('M7-1 learning session workspace', () => {
     expect(wrapper.find('summary').text().endsWith('…')).toBe(true);
   });
 
-  it('persists a supported task transition using the server response', async () => {
+  it('starts practice by persisting the existing concept and example transitions', async () => {
     const updated = structuredClone(baseSession);
     updated.status = 'in_progress';
-    updated.tasks[0]!.status = 'in_progress';
-    updated.started_at = '2026-10-25T08:05:00Z';
-    vi.mocked(updateLearningSessionTask).mockResolvedValue(updated);
+    vi.mocked(updateLearningSessionTask).mockImplementation(async (_id, phase, status) => {
+      updated.tasks.find((task) => task.phase === phase)!.status = status;
+      return structuredClone(updated);
+    });
     const wrapper = mount(LearningSessionView);
     await flushPromises();
-    const start = wrapper.findAll('button').find((button) => button.text().includes('开始本阶段'));
+    const start = wrapper.findAll('button').find((button) => button.text().includes('开始练习'));
     await start?.trigger('click');
     await flushPromises();
     expect(updateLearningSessionTask).toHaveBeenCalledWith(91, 'concept_learning', 'in_progress');
+    expect(updateLearningSessionTask).toHaveBeenCalledWith(91, 'guided_example', 'completed');
+    expect(wrapper.find('.learning-content').isVisible()).toBe(false);
+    expect(wrapper.text()).toContain('返回查看概念');
     expect(wrapper.text()).toContain('学习中');
   });
 
@@ -414,5 +424,38 @@ describe('M7-1 learning session workspace', () => {
     await flushPromises();
     expect(completeLearningSession).toHaveBeenCalledTimes(2);
     expect(wrapper.text()).toContain('下降 10 个百分点');
+  });
+
+  it('preserves the finished target when returning to Learn', async () => {
+    const completed = structuredClone(baseSession);
+    completed.status = 'completed';
+    vi.mocked(fetchLearningSession).mockResolvedValue(completed);
+    const wrapper = mount(LearningSessionView);
+    await flushPromises();
+    await wrapper.find('.back-link').trigger('click');
+    expect(routing.push).toHaveBeenCalledWith({
+      name: 'learn', query: { courseId: '7', finishedNode: '11' },
+    });
+  });
+
+  it('restores completed attempts after refresh and continues to the returned target', async () => {
+    const completed = structuredClone(baseSession);
+    completed.status = 'completed';
+    completed.recommendation_refresh_status = 'succeeded';
+    completed.completion_summary = { practice_summary: { total_questions: 1, correct_answers: 0, accuracy: 0 }, mastery_changes: [], evidence_ids: [1], recommendation: null };
+    completed.practice_attempts = [{ ...basePractice.current_question!, attempt_id: 501, selected_options: ['B'], correct_answer: ['A'], explanation: '每个输入只能对应一个输出。', is_correct: false, points_awarded: '0', source_refs: [], submitted_at: '2026-10-25T08:00:00Z' }];
+    routing.route.query = { completed: '8,9' };
+    vi.mocked(fetchLearningSession).mockResolvedValue(completed);
+    vi.mocked(fetchSessionContinuation).mockResolvedValue({ recommendation: { knowledge_node_id: 12, title: '下一知识点', reason_codes: [] } });
+    vi.mocked(createLearningSession).mockResolvedValue({ ...structuredClone(baseSession), session_id: 92, target_knowledge_node_id: 12 });
+    const wrapper = mount(LearningSessionView);
+    await flushPromises();
+    expect(wrapper.text()).toContain('每个输入只能对应一个输出');
+    expect(fetchSessionContinuation).toHaveBeenCalledWith(91, [8, 9]);
+    expect(nextPracticeQuestion).not.toHaveBeenCalled();
+    await wrapper.findAll('button').find((button) => button.text().includes('学习下一个知识点'))!.trigger('click');
+    await flushPromises();
+    expect(createLearningSession).toHaveBeenCalledWith({ course_id: 7, target_knowledge_node_id: 12 });
+    expect(routing.push).toHaveBeenCalledWith({ name: 'learning-session', params: { sessionId: 92 }, query: { completed: '8,9,11' } });
   });
 });

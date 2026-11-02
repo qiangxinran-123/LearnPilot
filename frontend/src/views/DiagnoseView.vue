@@ -30,6 +30,7 @@ const isStarting = ref(false);
 const selectedCourse = computed(
   () => courses.value.find((item) => item.id === selectedCourseId.value) ?? null,
 );
+const recentDiagnoses = computed(() => assessments.value.filter((item) => item.course_id === selectedCourseId.value && item.status === 'submitted'));
 const unfinished = computed(() =>
   assessments.value.find(
     (item) =>
@@ -113,7 +114,7 @@ onMounted(() => void loadPage());
   <section class="page-view diagnose-page">
     <PageHeader
       title="学习诊断"
-      description="以课程知识结构为范围，完成一次专注、可恢复的初始诊断。"
+      description="完成诊断，了解当前掌握情况。"
     />
     <LoadingBlock v-if="pageState === 'loading'" :count="2" />
     <ErrorState
@@ -135,8 +136,8 @@ onMounted(() => void loadPage());
     <template v-else>
       <section class="diagnose-setup" aria-labelledby="diagnose-setup-title">
         <div class="diagnose-setup__intro">
-          <h2 id="diagnose-setup-title">选择一门课程</h2>
-          <p>切换课程即可查看真实题库覆盖与当前诊断状态。</p>
+          <h2 id="diagnose-setup-title">当前课程</h2>
+          <p>选择课程，查看诊断准备情况。</p>
           <el-select v-model="selectedCourseId" class="course-select" aria-label="选择诊断课程">
             <el-option
               v-for="course in courses"
@@ -145,18 +146,6 @@ onMounted(() => void loadPage());
               :value="course.id"
             />
           </el-select>
-          <nav class="course-list" aria-label="诊断课程列表">
-            <button
-              v-for="course in courses"
-              :key="course.id"
-              type="button"
-              :class="{ 'course-list__item--active': selectedCourseId === course.id }"
-              @click="selectedCourseId = course.id"
-            >
-              <strong>{{ course.name }}</strong>
-              <span>{{ course.description || '查看诊断准备状态' }}</span>
-            </button>
-          </nav>
         </div>
         <div class="readiness-panel" aria-live="polite">
           <div v-if="unfinished" class="readiness-ready">
@@ -203,8 +192,8 @@ onMounted(() => void loadPage());
           </div>
           <el-icon><Timer /></el-icon>
         </div>
-        <div v-if="assessments.length" class="history-list">
-          <article v-for="item in assessments" :key="item.id" class="history-row">
+        <div v-if="recentDiagnoses.length" class="history-list">
+          <article v-for="item in recentDiagnoses" :key="item.id" class="history-row">
             <div>
               <h3>{{ item.course_name }}</h3>
               <p>{{ formatDate(item.submitted_at || item.created_at) }}</p>
@@ -231,7 +220,7 @@ onMounted(() => void loadPage());
 <style scoped>
 .diagnose-setup {
   display: grid;
-  grid-template-columns: minmax(260px, 0.82fr) minmax(420px, 1.18fr);
+  grid-template-columns: 1fr;
   border: 1px solid var(--lp-border);
   border-radius: var(--lp-radius-lg);
   background: var(--lp-surface);
@@ -239,8 +228,8 @@ onMounted(() => void loadPage());
   overflow: hidden;
 }
 .diagnose-setup__intro {
-  padding: 34px;
-  border-right: 1px solid var(--lp-border);
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--lp-border);
   background: #fbfcfe;
 }
 .eyebrow {
@@ -261,44 +250,13 @@ onMounted(() => void loadPage());
   color: var(--lp-text-secondary);
 }
 .course-select {
-  display: none;
-  width: 100%;
-  margin-top: 22px;
-}
-.course-list {
-  display: grid;
-  gap: 8px;
-  margin-top: 22px;
-}
-.course-list button {
-  display: grid;
-  gap: 3px;
-  width: 100%;
-  padding: 12px 14px;
-  border: 1px solid var(--lp-border);
-  border-radius: var(--lp-radius-md);
-  color: var(--lp-ink);
-  background: var(--lp-surface);
-  text-align: left;
-  cursor: pointer;
-}
-.course-list button:hover,
-.course-list button:focus-visible,
-.course-list__item--active {
-  border-color: var(--lp-primary);
-  background: #edf5ff;
-  outline: none;
-}
-.course-list span {
-  overflow: hidden;
-  color: var(--lp-text-secondary);
-  font-size: 12px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  display: block;
+  width: min(280px, 100%);
+  margin-top: 12px;
 }
 .readiness-panel {
   min-height: 300px;
-  padding: 34px;
+  padding: 24px;
 }
 .readiness-heading {
   display: flex;
@@ -437,12 +395,6 @@ onMounted(() => void loadPage());
   .diagnose-setup__intro {
     border-right: 0;
     border-bottom: 1px solid var(--lp-border);
-  }
-  .course-select {
-    display: block;
-  }
-  .course-list {
-    display: none;
   }
   .history-row {
     grid-template-columns: 1fr auto;

@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from backend.app.core.settings import Settings, get_settings
 from backend.app.db.models import Assessment, Course, User
 from backend.app.db.session import get_db
-from backend.app.models import AssessmentStatus
+from backend.app.models import AssessmentStatus, AssessmentType
 from backend.app.repositories import AssessmentRepository, ResponseRepository, UserRepository
 from backend.app.schemas.assessment_scoring import AssessmentReadinessSchema
 from backend.app.schemas.diagnostic import ObjectiveAnswerSchema
@@ -54,6 +54,7 @@ class DiagnosticExperienceService:
                 .where(
                     Assessment.course_id == course_id,
                     Assessment.owner_id == owner_id,
+                    Assessment.assessment_type == AssessmentType.INITIAL_DIAGNOSTIC,
                     Assessment.status.in_([AssessmentStatus.READY, AssessmentStatus.IN_PROGRESS]),
                 )
                 .order_by(Assessment.id.desc())
@@ -162,7 +163,9 @@ class DiagnosticExperienceService:
             assessments = list(
                 self.session.scalars(
                     select(Assessment)
-                    .where(Assessment.owner_id == owner_id)
+                    .where(
+                        Assessment.owner_id == owner_id, Assessment.assessment_type == AssessmentType.INITIAL_DIAGNOSTIC
+                    )
                     .order_by(Assessment.created_at.desc(), Assessment.id.desc())
                 )
             )

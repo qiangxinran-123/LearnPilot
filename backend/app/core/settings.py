@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     knowledge_extraction_max_input_chars: int = Field(default=200_000, ge=12_000, le=1_000_000)
     knowledge_extraction_max_candidates: int = Field(default=100, ge=20, le=500)
     knowledge_canonicalization_max_candidates: int = Field(default=200, ge=2, le=1000)
+    knowledge_canonicalization_max_raw_candidates: int = Field(default=1000, ge=1, le=10000)
     knowledge_canonicalization_block_size: int = Field(default=12, ge=2, le=20)
     knowledge_relationship_max_nodes: int = Field(default=120, ge=1, le=500)
     knowledge_relationship_block_size: int = Field(default=12, ge=2, le=20)

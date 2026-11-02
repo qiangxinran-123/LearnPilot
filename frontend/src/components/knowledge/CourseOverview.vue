@@ -2,7 +2,7 @@
 import { ArrowRight, Document, Search, Share } from '@element-plus/icons-vue';
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 
-import { presentBuildStatus } from '@/components/knowledge/buildStatus';
+import { materialCoverageNote, presentBuildStatus, runningBuildMessage } from '@/components/knowledge/buildStatus';
 import { fetchCanonicalNodes } from '@/services/knowledge';
 import { normalizeApiError } from '@/services/http';
 import type { Material } from '@/types/course';
@@ -123,18 +123,20 @@ defineExpose({ focusSearch, refreshList });
       aria-live="polite"
     >
       <div class="overview-build__copy">
-        <strong>{{ presentation.title }}</strong>
-        <p>{{ presentation.detail }}</p>
+        <strong>{{ isRunning ? (status?.has_model ? '正在更新课程知识结构' : '正在整理课程知识') : presentation.title }}</strong>
+        <p>{{ isRunning ? runningBuildMessage(status) : presentation.detail }}</p>
+        <p v-if="status && materialCoverageNote(status)">{{ materialCoverageNote(status) }}</p>
         <p v-if="buildError" class="overview-build__error" role="alert">{{ buildError }}</p>
+        <p v-if="statusError && isRunning" class="overview-build__error" role="alert">状态暂时无法更新：{{ statusError }} 系统会继续尝试。</p>
       </div>
       <div class="overview-build__action">
         <el-button
-          v-if="presentation.action && status?.can_build"
+          v-if="(presentation.action && status?.can_build) || isRunning"
           type="primary"
           :loading="isRunning"
           :disabled="isRunning"
           @click="emit('build')"
-          >{{ presentation.action }}</el-button
+          >{{ isRunning ? '正在生成' : presentation.action }}</el-button
         >
         <el-button
           v-else-if="status?.state === 'no_materials'"

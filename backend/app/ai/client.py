@@ -13,6 +13,7 @@ from urllib.request import Request, urlopen
 from pydantic import BaseModel, ValidationError
 
 from backend.app.ai.errors import AIServiceError
+from backend.app.ai.models import DiagnosticQuestionGenerationOutput
 from backend.app.core.settings import Settings
 
 logger = logging.getLogger(__name__)
@@ -150,6 +151,62 @@ class OpenAICompatibleLLMClient(LLMClient):
         )
 
 
+def _mock_diagnostic_question(source: str) -> dict[str, object]:
+    # Only the request header supplies the target; material content is untrusted.
+    header, separator, remainder = source.partition("\n<untrusted_course_material>\n")
+    context, end, _ = remainder.partition("\n</untrusted_course_material>")
+    target = re.search(r"^目标知识节点：id=(\d+); name=([^\n;]+); description=", header, re.MULTILINE)
+    kind = re.search(r"^题型：(single_choice|true_false|multiple_choice)$", header, re.MULTILINE)
+    difficulty = re.search(r"^难度：(easy|medium|hard)$", header, re.MULTILINE)
+    count = re.search(r"^生成 (\d+) 道互不重复的候选题。$", header, re.MULTILINE)
+    reference = re.search(r"^\[material_id=(\d+); source_reference=([^\]\n]+)\]\n([^\n]+)", context, re.MULTILINE)
+    if not separator or not end or not target or not kind or not difficulty or not count or not reference:
+        raise AIServiceError("AI_INVALID_OUTPUT", "Mock 诊断需要有效的知识点和资料来源。")
+    if int(count.group(1)) != 1:
+        raise AIServiceError("AI_INVALID_OUTPUT", "Mock 诊断每次只能生成一道题，请减少请求数量。")
+    node_id, material_id = int(target.group(1)), int(reference.group(1))
+    node_name = target.group(2).strip()
+    excerpt = reference.group(3).strip()[:160]
+    if node_id < 1 or material_id < 1 or not node_name or len(excerpt) < 12:
+        raise AIServiceError("AI_INVALID_OUTPUT", "Mock 诊断的知识点或资料内容不足。")
+
+    question_type = kind.group(1)
+    if question_type == "true_false":
+        stem = f"【模拟题】关于「{node_name}」，资料中是否包含这段原文：{excerpt}"
+        options = [{"key": "TRUE", "text": "正确"}, {"key": "FALSE", "text": "错误"}]
+        answers = ["TRUE"]
+        explanation = "题干引用的是提供的资料原文，因此正确；该模拟题只核对原文。"
+    elif question_type == "multiple_choice":
+        middle = len(excerpt) // 2
+        stem = f"【模拟题】关于「{node_name}」，哪些片段来自提供的资料原文？"
+        options = [
+            {"key": "A", "text": excerpt[:middle]},
+            {"key": "B", "text": excerpt[middle:]},
+            {"key": "C", "text": "该资料没有提供任何文字"},
+        ]
+        answers = ["A", "B"]
+        explanation = "前两项均摘自提供的资料原文；资料并非空白。该模拟题只核对原文。"
+    else:
+        stem = f"【模拟题】关于「{node_name}」，下列哪项是提供的资料原文？"
+        options = [{"key": "A", "text": excerpt}, {"key": "B", "text": "该资料没有提供任何文字"}]
+        answers = ["A"]
+        explanation = "第一项摘自提供的资料原文；资料并非空白。该模拟题只核对原文。"
+    return {
+        "questions": [
+            {
+                "question_type": question_type,
+                "stem": stem,
+                "options": options,
+                "correct_answer": answers,
+                "explanation": explanation,
+                "difficulty": difficulty.group(1),
+                "knowledge_node_ids": [node_id],
+                "source_refs": [{"material_id": material_id, "source_reference": reference.group(2)}],
+            }
+        ]
+    }
+
+
 class ExplicitMockLLMClient(LLMClient):
     """Deterministic local adapter used only when LLM_MODE=mock is explicitly selected."""
 
@@ -167,7 +224,9 @@ class ExplicitMockLLMClient(LLMClient):
         compact = " ".join(source.split())[:360] or "资料内容"
         references = list(dict.fromkeys(re.findall(r"^\[([^\]\n]+)\]$", source, flags=re.MULTILINE)))
         fields = schema.model_fields
-        if "contains_edges" in fields and "prerequisite_edges" in fields:
+        if operation == "diagnostic_question_generation" and schema is DiagnosticQuestionGenerationOutput:
+            payload = _mock_diagnostic_question(source)
+        elif "contains_edges" in fields and "prerequisite_edges" in fields:
             payload: dict[str, object] = {"contains_edges": [], "prerequisite_edges": []}
         elif "groups" in fields:
             payload: dict[str, object] = {"groups": []}

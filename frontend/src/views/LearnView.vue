@@ -10,7 +10,6 @@ import LoadingBlock from '@/components/feedback/LoadingBlock.vue';
 import {
   learningTaskTypeLabel,
   planLevelPresentation,
-  recommendationReasonLabel,
   unavailablePresentation,
 } from '@/components/learning/planPresentation';
 import { useLearningPlan } from '@/composables/useLearningPlan';
@@ -35,12 +34,11 @@ const unavailable = computed(() =>
   ),
 );
 const levelPresentation = computed(() => planLevelPresentation(learningPlan.planLevel.value));
-const prerequisiteItems = computed(
-  () =>
-    learningPlan.plan.value?.prerequisite_evidence.filter(
-      (item) => item.target_node_id === learningPlan.plan.value?.target_node_id,
-    ) ?? [],
-);
+const finishedCurrentTarget = computed(() => {
+  const raw = Array.isArray(route.query.finishedNode) ? route.query.finishedNode[0] : route.query.finishedNode;
+  return Number(raw) > 0 && Number(raw) === learningPlan.plan.value?.target_node_id;
+});
+
 
 function queryCourseId(): number | null {
   const raw = Array.isArray(route.query.courseId) ? route.query.courseId[0] : route.query.courseId;
@@ -66,11 +64,15 @@ function openDiagnosis(): void {
   void router.push({ name: 'diagnose', query: { courseId: String(selectedCourseId.value) } });
 }
 function openSession(sessionId: number): void {
-  void router.push({ name: 'learning-session', params: { sessionId } });
+  const completed = route.query.completed;
+  const sameFlow = String(route.query.flowSession ?? '') === String(sessionId);
+  const query = sameFlow && typeof completed === 'string' ? { completed } : {};
+  void router.push({ name: 'learning-session', params: { sessionId }, ...(Object.keys(query).length ? { query } : {}) });
 }
 async function startOrResumeSession(): Promise<void> {
-  if (learningSession.activeSession.value) {
-    openSession(learningSession.activeSession.value.session_id);
+  const active = learningSession.activeSession.value;
+  if (active && active.target_knowledge_node_id === learningPlan.plan.value?.target_node_id) {
+    openSession(active.session_id);
     return;
   }
   const plan = learningPlan.plan.value;
@@ -107,12 +109,11 @@ onMounted(async () => {
 
 <template>
   <section class="page-view learn-page">
-    <PageHeader title="学习计划" description="把下一步学习安排建立在真实知识状态与课程结构之上。" />
+    <PageHeader title="学习计划" description="选择课程，开始下一步学习。" />
     <section class="course-context" aria-labelledby="current-course-title">
       <div class="course-context__copy">
         <p id="current-course-title">当前学习课程</p>
         <strong>{{ selectedCourse?.name ?? '请选择课程' }}</strong>
-        <span>切换课程后，仅加载该课程的学习状态，不会自动生成新计划。</span>
       </div>
       <el-select
         v-if="courseStore.courses.length"
@@ -251,6 +252,16 @@ onMounted(async () => {
     />
 
     <template v-else-if="learningPlan.state.value === 'available' && learningPlan.plan.value">
+      <section v-if="finishedCurrentTarget" class="plan-entry" aria-label="本轮学习状态">
+        <div>
+          <h2>本轮学习已完成</h2>
+          <p>你可以稍后再复习「{{ learningPlan.targetNode.value?.name }}」。</p>
+        </div>
+        <el-button plain :loading="learningSession.isCreating.value"
+          :disabled="learningSession.isCreating.value || learningSession.isLoading.value || learningSession.activeLoadFailed.value"
+          @click="startOrResumeSession">主动重新学习</el-button>
+      </section>
+      <template v-else>
       <section v-if="levelPresentation" class="plan-level" aria-labelledby="plan-level-title">
         <div>
           <p>当前学习计划状态</p>
@@ -287,41 +298,15 @@ onMounted(async () => {
             "
             @click="startOrResumeSession"
           >
-            {{ learningSession.activeSession.value ? '继续学习' : '开始学习' }}
+            {{ learningSession.activeSession.value?.target_knowledge_node_id === learningPlan.plan.value.target_node_id ? '继续学习' : '开始学习' }}
           </el-button>
         </div>
       </section>
 
-      <div class="plan-context-grid">
-        <section class="context-card" aria-labelledby="recommendation-reasons-title">
-          <p class="eyebrow">WHY THIS TARGET</p>
-          <h2 id="recommendation-reasons-title">为什么推荐这里</h2>
-          <ul class="reason-list">
-            <li v-for="code in learningPlan.plan.value.reason_codes" :key="code">
-              {{ recommendationReasonLabel(code) }}
-            </li>
-          </ul>
-        </section>
-        <section class="context-card" aria-labelledby="prerequisite-title">
-          <p class="eyebrow">PREREQUISITES</p>
-          <h2 id="prerequisite-title">前置知识依据</h2>
-          <ul v-if="prerequisiteItems.length" class="prerequisite-list">
-            <li
-              v-for="item in prerequisiteItems"
-              :key="`${item.source_node_id}-${item.target_node_id}`"
-            >
-              <strong>{{ knowledgeName(item.source_node_id) }}</strong>
-              <span>{{ item.status === 'satisfied' ? '已满足' : '需要先巩固' }}</span>
-            </li>
-          </ul>
-          <p v-else class="context-card__empty">当前目标没有需要展示的直接前置知识。</p>
-        </section>
-      </div>
-
       <section class="task-section" aria-labelledby="learning-tasks-title">
         <header class="task-section__header">
           <div>
-            <p class="eyebrow">ORDERED PLAN</p>
+
             <h2 id="learning-tasks-title">学习任务</h2>
           </div>
           <p>以下为计划内容，不代表任务已经执行或完成。</p>
@@ -345,6 +330,7 @@ onMounted(async () => {
           </li>
         </ol>
       </section>
+      </template>
     </template>
   </section>
 </template>
@@ -415,8 +401,8 @@ onMounted(async () => {
   font-size: 12px;
 }
 .learn-course-select {
-  width: min(340px, 100%);
-  flex: 0 1 340px;
+  width: min(280px, 100%);
+  flex: 0 1 280px;
 }
 .plan-level {
   display: grid;
@@ -514,56 +500,10 @@ onMounted(async () => {
   font-size: 13px;
   font-weight: 620;
 }
-.plan-context-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 18px;
-  margin-top: 20px;
-}
-.context-card {
-  padding: 24px;
-  border: 1px solid var(--lp-border);
-  border-radius: var(--lp-radius-lg);
-  background: var(--lp-surface);
-}
-.context-card h2,
 .task-section h2 {
   margin-bottom: 12px;
   color: var(--lp-ink);
   font-size: 19px;
-}
-.reason-list {
-  display: grid;
-  gap: 9px;
-  margin: 0;
-  padding-left: 19px;
-  color: var(--lp-text-secondary);
-}
-.reason-list li::marker {
-  color: var(--lp-primary);
-}
-.prerequisite-list {
-  display: grid;
-  gap: 9px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.prerequisite-list li {
-  display: flex;
-  justify-content: space-between;
-  gap: 14px;
-  padding: 10px 12px;
-  border-radius: var(--lp-radius-sm);
-  background: var(--lp-surface-subtle);
-}
-.prerequisite-list span {
-  color: var(--lp-text-secondary);
-  font-size: 12px;
-}
-.context-card__empty {
-  margin: 0;
-  color: var(--lp-text-secondary);
 }
 .task-section {
   margin-top: 30px;
@@ -676,9 +616,6 @@ onMounted(async () => {
   color: var(--lp-danger) !important;
 }
 @media (max-width: 900px) {
-  .plan-context-grid {
-    grid-template-columns: 1fr;
-  }
   .learning-target {
     align-items: stretch;
     flex-direction: column;

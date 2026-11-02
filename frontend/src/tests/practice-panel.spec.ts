@@ -84,7 +84,22 @@ describe('M7-4 adaptive practice panel', () => {
     expect(nextPracticeQuestion).toHaveBeenCalledWith(91);
     expect(wrapper.text()).toContain('直接映射缓存中');
     expect(wrapper.text()).toContain('中等');
+    expect(wrapper.text()).toContain('第 1 题');
+    expect(wrapper.text()).not.toContain('/5');
+    expect(wrapper.text()).not.toContain('最多 5 题');
     expect(wrapper.text()).not.toContain('正确答案');
+  });
+
+  it('refreshes the session when restoring a practice that becomes completed', async () => {
+    vi.mocked(nextPracticeQuestion).mockResolvedValue({
+      ...structuredClone(basePractice), status: 'completed', current_question: null,
+      answered_count: 1, attempts: [attempt(true)],
+      summary: { answered_count: 1, correct_count: 1, accuracy: '1.00' },
+    });
+    const wrapper = mountPanel({ practiceAssessmentId: 71 });
+    await flushPromises();
+    expect(wrapper.text()).toContain('本次练习已完成');
+    expect(wrapper.emitted('changed')).toHaveLength(1);
   });
 
   it('validates selection, submits once and renders deterministic feedback', async () => {

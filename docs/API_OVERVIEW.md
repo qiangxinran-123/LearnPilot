@@ -1,6 +1,6 @@
 # LearnPilot API 总览
 
-本文以当前 LearnPilot V1 / M7 代码为准。
+本文以当前 LearnPilot V1 / M8 代码为准。
 
 - 本地 Base URL：`http://127.0.0.1:8000`
 - Swagger UI：`GET /docs`
@@ -169,6 +169,18 @@ MaterialContent + parser segments
 
 会话和资料按当前用户及课程隔离。导师引用必须匹配真实资料来源；练习未提交前不返回正确答案。完成操作可安全重复：已保存的证据和掌握结果不会重复写入，结算后的推荐刷新失败可单独重试。
 
+## M8 进展分析接口
+
+| 方法 | 路径 | 作用 |
+| --- | --- | --- |
+| GET | `/api/courses/{course_id}/progress/overview` | 读取课程掌握总览与覆盖率。 |
+| GET | `/api/courses/{course_id}/progress/knowledge` | 读取知识点掌握比较。 |
+| GET | `/api/courses/{course_id}/progress/trend` | 读取历史趋势；`range` 支持 `7d`、`30d`、`all`。 |
+| GET | `/api/courses/{course_id}/progress/history` | 分页读取正式诊断与已完成学习会话，支持 `limit` 和 `cursor`。 |
+| GET | `/api/courses/{course_id}/progress/review-risk` | 读取基于已有证据和练习时间的复习风险提示。 |
+
+接口按当前用户及课程隔离，数据不足与过期状态会明确区分。趋势只使用已记录的历史快照；风险等级是启发式提示。
+
 ## 统一错误格式
 
 可预期错误统一返回：
@@ -212,3 +224,4 @@ MaterialContent + parser segments
 - [M6 实施与验收报告](migration/M6_IMPLEMENTATION_REPORT.md)
 - [M7 集成设计](architecture/M7_INTEGRATION_DESIGN.md)
 - [M7 最终验收报告](migration/M7_6_FINAL_ACCEPTANCE_REPORT.md)
+- [M8 进展分析架构](architecture/M8_PROGRESS_ANALYTICS.md)

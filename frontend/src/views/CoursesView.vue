@@ -42,7 +42,7 @@ async function createNewCourse(payload: CourseInput): Promise<void> {
 
 <template>
   <section class="page-view">
-    <PageHeader title="课程" description="建立课程空间，集中管理真实的学习资料。">
+    <PageHeader title="课程" description="管理课程与学习资料。">
       <template #actions>
         <el-button type="primary" @click="isCreateDialogOpen = true">
           <el-icon><Plus /></el-icon>

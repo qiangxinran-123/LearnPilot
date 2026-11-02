@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.ai import AIServiceError, LLMClient, get_llm_client
 from backend.app.ai.chunking import chunk_segments
+from backend.app.ai.errors import knowledge_build_provider_message
 from backend.app.ai.models import KnowledgeCandidateDraft, KnowledgeExtractionOutput
 from backend.app.ai.prompts import knowledge_extraction as extraction_prompt
 from backend.app.ai.references import resolve_source_reference
@@ -459,6 +460,9 @@ class KnowledgeExtractionService:
                 "KNOWLEDGE_EXTRACTION_INVALID_OUTPUT",
                 "AI returned output that did not match the required knowledge candidate schema.",
             )
+        message = knowledge_build_provider_message(error.code)
+        if message is not None:
+            return KnowledgeExtractionError("KNOWLEDGE_EXTRACTION_FAILED", message)
         return KnowledgeExtractionError(
             "KNOWLEDGE_EXTRACTION_FAILED",
             "The AI provider could not complete knowledge extraction.",
