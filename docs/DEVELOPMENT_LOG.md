@@ -1,6 +1,6 @@
 # LearnPilot 分阶段开发日志
 
-本日志同时记录当前 LearnPilot V1 里程碑和早期 V0.1 原型演进。当前代码已进入 M8 进展分析阶段；下方 V0.1 阶段表仅用于历史追溯。
+本日志同时记录当前 LearnPilot V1 里程碑和早期 V0.1 原型演进。M8 和后续 UX-FIX 专项已完成，项目以 90% 进入 M9；M9-A 完成后为 91%，下方 V0.1 阶段表仅用于历史追溯。
 
 ## LearnPilot V1 里程碑
 
@@ -19,7 +19,7 @@
 | M5 | 学生知识状态 | 从已提交诊断生成 Learning Evidence，并计算可解释的 Mastery/Confidence。 | 见 [M5 最终验收](migration/M5_FINAL_ACCEPTANCE_REPORT.md)。 |
 | M6 | 推荐与学习计划 | 先修约束推荐、计划持久化与复用、首页/学习页展示；补充课程级诊断题准备和资料同步流程。 | 阶段报告最近一次回归：后端 `359/359`、前端 `143/143`；见 [M6 实施报告](migration/M6_IMPLEMENTATION_REPORT.md) 和 [体验完善](migration/M6_UX_FIX_5_REPORT.md)。 |
 | M7 | 学习执行与反馈 | 可恢复学习会话、来源资料、AI 导师、自适应练习、证据结算和掌握/推荐刷新。 | 验收报告记录后端 `410/410`、前端 `181/181`，迁移、浏览器流程和真实 provider 验证通过；见 [M7 最终验收](migration/M7_6_FINAL_ACCEPTANCE_REPORT.md)。 |
-| M8 | 进展分析 | 课程总览、知识点比较、掌握趋势、学习历史及复习风险提示；后续完善学习诊断体验与证据去重。 | 联合回归记录后端 `485/485`、前端 `232/232`；M8 最终验收尚未确认，见 [实施报告](migration/M8_IMPLEMENTATION_REPORT.md)与[联合回归](migration/UX_FIX_FINAL_ACCEPTANCE.md)。 |
+| M8 | 进展分析 | 课程总览、知识点比较、掌握趋势、学习历史及复习风险提示；后续完善学习诊断体验与证据去重。 | 2026-11-02 用户确认 M8-5 完成、最终验收通过；联合回归记录后端 485/485、前端 232/232。仓库暂未找到独立 M8-5 验收报告；见 [实施报告](migration/M8_IMPLEMENTATION_REPORT.md)、[联合回归](migration/UX_FIX_FINAL_ACCEPTANCE.md)与 [M9 规划交接](migration/M9_PLANNING_HANDOFF.md)。 |
 
 M3 完成 Course Knowledge Model，M4/M5 在其上形成诊断证据与学生知识状态，M6 据此生成推荐和学习计划，M7 将练习结果转为证据并刷新掌握状态。M3 边界见 [M3 最终验收](migration/M3_FINAL_ACCEPTANCE.md)。
 
@@ -54,4 +54,19 @@ wsl -d Ubuntu --cd /home/qxrrr/projects/learnpilot \
 
 ## 版本定位
 
-LearnPilot V0.1 是后端导向的比赛原型，其摘要和卡片使用本地 mock 规则。当前 LearnPilot V1 已迁移到关系数据库、Vue 前端和可配置的模型 provider，并完成课程知识模型、诊断、学生知识状态、推荐与 M7 学习执行闭环。完整进展分析仍属于后续里程碑。
+LearnPilot V0.1 是后端导向的比赛原型，其摘要和卡片使用本地 mock 规则。当前 LearnPilot V1 已迁移到关系数据库、Vue 前端和可配置的模型 provider，并完成课程知识模型、诊断、学生知识状态、推荐与 M7 学习执行闭环。M8 进展分析与后续 UX-FIX 已完成；M9 的真实模型质量评测与交付准备尚待执行。
+
+## M9-A — 基线审计与评测协议冻结（2026-11-03）
+
+M9-A1 完成 21 个能力分组代表性证据、15 项 UX-FIX 与 6 条关键调用链核对；M9-A2 冻结 AI 评测协议、可靠性与 UX 计划及执行清单。历史测试数量不作为本次测试结果。发布摘要见 [M9 阶段更新](M9_OVERVIEW.md)。
+
+M9-A COMPLETE，项目进度 91%；M9-B 可在用户确认后开始数据准备，正式评分须先完成来源授权、隔离样本、人工金标准、双人复核及实际 HTTP 调用限额。M9-A 未执行真实 Provider 批量评测。保留原始大资料故障 NOT REPRODUCED、独立 M8-5 报告缺失但用户确认完成、Evidence 保守去重与历史数据边界。未更改业务代码、数据库 Schema、Prompt 或历史测试统计。
+
+
+## 2026-11-07 — M9-D' 产品体验与演示验收
+
+用户确认 M9-C' 完成和本轮浏览器体验通过。隔离浏览器验证真实课程数据、诊断提交、知识图谱、推荐会话、练习和进度历史；历史真实 Tutor 记录可读取。本轮没有实时付费模型调用。
+
+修复题库新增同节点练习题后诊断覆盖目标不必要增长导致无法开始的问题：保留至少 8 题和必要核心节点覆盖，选择最大可满足目标并优先覆盖必需节点；相应测试明确更新。修复无新 Evidence 时错误声称重新计算的学习反馈。最终后端 487 passed（2 条既有 SQLAlchemy 警告），前端 233 passed，TypeScript、ESLint、Ruff、隔离构建与 SQLite alembic check 通过；真实浏览器用户确认与自动化证据分别记录。
+
+M9-D' COMPLETE，LearnPilot V1 96%，M10 READY / NOT STARTED。正式系统性 AI 评测、原预算守卫与原大资料事故仍为 DEFERRED / NOT REPRODUCED。有限安全扫描为 PARTIAL；内部授权课程摘录未随公开提交发布。详见 [M9 阶段更新](M9_OVERVIEW.md)。

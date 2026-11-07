@@ -284,7 +284,7 @@ def test_readiness_reuses_validated_count_and_required_node_coverage(database, p
         assert [node.knowledge_node_id for node in readiness.required_nodes] == required_ids
 
 
-def test_ninth_validated_question_requires_ninth_core_node_coverage(database) -> None:
+def test_extra_question_uses_largest_covered_target_without_blocking_diagnosis(database) -> None:
     factory, seed = database
     high_node_ids = _seed_readiness_nodes(factory, seed)
     with factory() as session, session.begin():
@@ -309,11 +309,26 @@ def test_ninth_validated_question_requires_ninth_core_node_coverage(database) ->
     with factory() as session:
         readiness = _service(session).readiness(seed.course_id)
         assert readiness.validated_count == 9
+        assert readiness.required_questions == 8
+        assert readiness.can_start is True
+        assert len(readiness.required_nodes) == 8
+        assert all(node.has_validated_question for node in readiness.required_nodes)
+
+    with factory() as session, session.begin():
+        _add_question(
+            session,
+            course_id=seed.course_id,
+            node_id=high_node_ids[8],
+            material_id=seed.material_id,
+            stem="Newly covered ninth core diagnostic question?",
+            status=QuestionValidationStatus.VALIDATED,
+        )
+    with factory() as session:
+        readiness = _service(session).readiness(seed.course_id)
         assert readiness.required_questions == 9
-        assert readiness.can_start is False
-        assert len(readiness.required_nodes) == 9
+        assert readiness.can_start is True
         assert readiness.required_nodes[-1].knowledge_node_id == high_node_ids[8]
-        assert readiness.required_nodes[-1].has_validated_question is False
+        assert readiness.required_nodes[-1].has_validated_question is True
 
 
 def test_unconfigured_provider_and_invalid_output_leave_no_questions(database) -> None:

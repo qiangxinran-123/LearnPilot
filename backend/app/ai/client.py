@@ -13,6 +13,7 @@ from urllib.request import Request, urlopen
 from pydantic import BaseModel, ValidationError
 
 from backend.app.ai.errors import AIServiceError
+from backend.app.ai.evaluation_transport import active_evaluation_transport
 from backend.app.ai.models import DiagnosticQuestionGenerationOutput
 from backend.app.core.settings import Settings
 
@@ -47,6 +48,9 @@ class OpenAICompatibleLLMClient(LLMClient):
         self.model = settings.llm_model
         self.timeout_seconds = settings.llm_timeout_seconds
         self.max_attempts = settings.llm_max_attempts
+        # An evaluation client must never fall back to ordinary network access
+        # if its execution context is lost (for example in another thread).
+        self._evaluation_transport = active_evaluation_transport()
         if not self.api_key or not self.base_url or not self.model:
             raise AIServiceError(
                 "AI_NOT_CONFIGURED",
@@ -85,7 +89,11 @@ class OpenAICompatibleLLMClient(LLMClient):
         for attempt in range(self.max_attempts):
             started = time.monotonic()
             try:
-                with urlopen(request, timeout=self.timeout_seconds) as response:
+                transport = active_evaluation_transport()
+                if self._evaluation_transport is not None and transport is not self._evaluation_transport:
+                    raise RuntimeError("evaluation transport context missing or changed")
+                send = transport.open if transport is not None else urlopen
+                with send(request, timeout=self.timeout_seconds) as response:
                     raw_body = response.read()
                 try:
                     body = json.loads(raw_body)

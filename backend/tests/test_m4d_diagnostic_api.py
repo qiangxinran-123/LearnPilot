@@ -381,3 +381,30 @@ def test_full_isolated_http_diagnostic_flow(api_client) -> None:
     )
     assert locked_status == 409
     assert locked["error"]["code"] == "ASSESSMENT_INVALID_TRANSITION"
+
+
+def test_diagnostic_submission_refreshes_mastery_and_replay_is_idempotent(api_client) -> None:
+    base_url, course_id, _ = api_client
+    assessment = _create_and_start(base_url, course_id)
+    for question in assessment["questions"]:
+        status, _ = _request(
+            base_url,
+            "PUT",
+            f"/api/diagnostics/assessments/{assessment['id']}/responses/{question['assessment_question_id']}",
+            {"selected_options": [question["options"][0]["key"]]},
+        )
+        assert status == 200
+
+    first_status, _ = _request(base_url, "POST", f"/api/diagnostics/assessments/{assessment['id']}/submit")
+    mastery_status, mastery = _request(base_url, "GET", f"/api/courses/{course_id}/mastery")
+    assert first_status == mastery_status == 200
+    assert len(mastery["nodes"]) == 1
+    state = mastery["nodes"][0]
+    assert state["calculation_state"] == "calculated"
+    assert state["evidence_count"] == 8
+    assert state["mastery_score"] is not None
+
+    second_status, _ = _request(base_url, "POST", f"/api/diagnostics/assessments/{assessment['id']}/submit")
+    _, replay = _request(base_url, "GET", f"/api/courses/{course_id}/mastery")
+    assert second_status == 200
+    assert replay == mastery

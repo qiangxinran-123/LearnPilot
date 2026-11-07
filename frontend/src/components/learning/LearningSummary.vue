@@ -58,7 +58,8 @@ const confidenceLabels: Record<string, string> = {
           <strong>{{ percentage(entry.value) }}</strong>
         </div>
         <p class="summary__delta">{{ deltaLabel }}</p>
-        <p>本次形成 {{ summary.evidence_ids.length }} 条有效学习证据，系统依据实际答题结果重新计算掌握度。</p>
+        <p v-if="summary.evidence_ids.length">本次形成 {{ summary.evidence_ids.length }} 条有效学习证据，系统依据实际答题结果重新计算掌握度。</p>
+        <p v-else>本次练习未形成新的有效学习证据，掌握度保持原有状态。</p>
         <p v-if="change">当前置信度：{{ confidenceLabels[change.confidence] ?? change.confidence }}</p>
       </section>
       <section class="summary__next">

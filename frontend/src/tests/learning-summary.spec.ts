@@ -33,6 +33,13 @@ describe('learning settlement summary', () => {
       expect(wrapper.text()).toContain('替换策略');
     },
   );
+  it('does not claim recalculation when no new evidence was created', () => {
+    const current = session(0);
+    current.completion_summary!.evidence_ids = [];
+    const wrapper = mount(LearningSummary, { props: { session: current, retrying: false } });
+    expect(wrapper.text()).toContain('本次练习未形成新的有效学习证据');
+    expect(wrapper.text()).not.toContain('系统依据实际答题结果重新计算掌握度');
+  });
   it('handles empty recommendations and retryable failure', async () => {
     const empty = session(0);
     if (empty.completion_summary) empty.completion_summary.recommendation = null;

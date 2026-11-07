@@ -87,7 +87,7 @@ class AssessmentAssemblyService:
                     raise AssessmentAssemblyError("COURSE_NOT_FOUND", "Course not found.")
                 core_nodes = self._core_nodes(course_id)
                 eligible = self._eligible_questions(course_id, {node.id for node in core_nodes})
-                target = self._target_question_count(len(core_nodes), len(eligible))
+                target = self._target_question_count(core_nodes, eligible)
                 covered_ids = {item.primary_node.id for item in eligible}
                 required_coverage_ids = {node.id for node in core_nodes[: min(len(core_nodes), target)]}
                 statistics = QuestionBankStatisticsSchema(
@@ -102,7 +102,7 @@ class AssessmentAssemblyService:
                         "Validated question bank cannot meet the minimum count and core knowledge coverage.",
                         statistics=statistics,
                     )
-                selected = self._select_questions(eligible, target)
+                selected = self._select_questions(eligible, target, required_coverage_ids)
                 selected_node_ids = {item.primary_node.id for item in selected}
                 if len(selected) != target or not required_coverage_ids.issubset(selected_node_ids):
                     raise AssessmentAssemblyError(
@@ -165,7 +165,7 @@ class AssessmentAssemblyService:
                 )
                 return QuestionBankAssemblyPreview(readiness, ())
             eligible = self._eligible_questions(course_id, {node.id for node in core_nodes})
-            target = self._target_question_count(len(core_nodes), len(eligible))
+            target = self._target_question_count(core_nodes, eligible)
             covered_ids = {item.primary_node.id for item in eligible}
             required_ids = {node.id for node in core_nodes[: min(len(core_nodes), target)]}
             can_start = target >= self.MIN_QUESTIONS and required_ids.issubset(covered_ids)
@@ -294,16 +294,25 @@ class AssessmentAssemblyService:
             result.append(EligibleQuestion(question, primary_links[0].knowledge_node))
         return result
 
-    def _target_question_count(self, core_node_count: int, available_count: int) -> int:
+    def _target_question_count(self, core_nodes: list[KnowledgeNode], eligible: list[EligibleQuestion]) -> int:
+        core_node_count = len(core_nodes)
         if core_node_count <= 4:
             recommended = 8
         elif core_node_count <= 10:
             recommended = max(10, min(15, (core_node_count * 5 + 3) // 4))
         else:
             recommended = max(15, min(self.MAX_QUESTIONS, (core_node_count * 5 + 3) // 4))
-        return min(recommended, available_count, self.MAX_QUESTIONS)
+        maximum = min(recommended, len(eligible), self.MAX_QUESTIONS)
+        covered_ids = {item.primary_node.id for item in eligible}
+        for target in range(maximum, self.MIN_QUESTIONS - 1, -1):
+            required_ids = {node.id for node in core_nodes[: min(core_node_count, target)]}
+            if required_ids.issubset(covered_ids):
+                return target
+        return maximum
 
-    def _select_questions(self, eligible: list[EligibleQuestion], target: int) -> list[EligibleQuestion]:
+    def _select_questions(
+        self, eligible: list[EligibleQuestion], target: int, required_ids: set[int]
+    ) -> list[EligibleQuestion]:
         desired_types = self._type_targets(target)
         desired_difficulties = self._difficulty_targets(target)
         selected: list[EligibleQuestion] = []
@@ -318,7 +327,7 @@ class AssessmentAssemblyService:
             if not candidates:
                 break
 
-            def rank(item: EligibleQuestion) -> tuple[int, int, int, int, int, int]:
+            def rank(item: EligibleQuestion) -> tuple[int, int, int, int, int, int, int]:
                 node_id = item.primary_node.id
                 uncovered_rank = 0 if node_id not in covered_nodes else 1
                 coverage_rank = (
@@ -329,6 +338,7 @@ class AssessmentAssemblyService:
                     desired_difficulties[item.question.difficulty] - difficulty_counts[item.question.difficulty]
                 )
                 return (
+                    0 if node_id in required_ids and node_id not in covered_nodes else 1,
                     uncovered_rank,
                     coverage_rank,
                     -max(type_need, 0),

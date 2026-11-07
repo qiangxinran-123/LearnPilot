@@ -627,3 +627,26 @@ def test_snapshot_insert_failure_rolls_back_entire_assessment(database, monkeypa
         with pytest.raises(RuntimeError, match="snapshot failure"):
             AssessmentAssemblyService(session).assemble_initial_diagnostic(seed.owner_id, seed.course_id)
         assert session.scalar(select(func.count(Assessment.id)).where(Assessment.course_id == seed.course_id)) == 0
+
+
+def test_required_coverage_precedes_earlier_optional_question(database) -> None:
+    factory, seed = database
+    with factory() as session, session.begin():
+        course, nodes = add_course_bank(
+            session, owner_id=seed.owner_id, name="Ordered coverage", node_count=10, questions_per_node=0
+        )
+        course_id = course.id
+        add_question(session, course_id=course.id, node_id=nodes[9].id, index=900)
+        for index, node in enumerate(nodes[:8]):
+            add_question(session, course_id=course.id, node_id=node.id, index=901 + index)
+        required = {node.id for node in nodes[:8]}
+    with factory() as session:
+        preview = AssessmentAssemblyService(session).preview_readiness(seed.owner_id, course_id)
+        assert preview.can_start is True
+        assert preview.estimated_question_count == 8
+    with factory() as session:
+        assembled = AssessmentAssemblyService(session).assemble_initial_diagnostic(seed.owner_id, course_id)
+        snapshots = [
+            AssessmentQuestionSnapshotSchema.model_validate(row.question_snapshot) for row in assembled.questions
+        ]
+        assert {node.id for snapshot in snapshots for node in snapshot.knowledge_nodes} == required

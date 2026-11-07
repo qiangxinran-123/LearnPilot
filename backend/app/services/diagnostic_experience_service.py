@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.core.settings import Settings, get_settings
-from backend.app.db.models import Assessment, Course, User
+from backend.app.db.models import Assessment, Course, LearningEvidence, User
 from backend.app.db.session import get_db
 from backend.app.models import AssessmentStatus, AssessmentType
 from backend.app.repositories import AssessmentRepository, ResponseRepository, UserRepository
@@ -27,6 +27,7 @@ from backend.app.services.assessment_assembly_service import AssessmentAssemblyS
 from backend.app.services.diagnostic_domain_service import DiagnosticDomainError, DiagnosticDomainService
 from backend.app.services.diagnostic_evidence_ingestion import EvidenceIngestionError, EvidenceIngestionService
 from backend.app.services.diagnostic_report_service import DiagnosticReportService
+from backend.app.services.mastery_service import MasteryService, MasteryServiceError
 
 logger = logging.getLogger(__name__)
 
@@ -106,6 +107,32 @@ class DiagnosticExperienceService:
                 expected_user_id=owner_id,
                 expected_course_id=submitted_course_id,
             )
+            with self.session.begin():
+                node_ids = list(
+                    self.session.scalars(
+                        select(LearningEvidence.current_knowledge_node_id)
+                        .where(
+                            LearningEvidence.source_assessment_id == submitted_assessment_id,
+                            LearningEvidence.user_id == owner_id,
+                            LearningEvidence.course_id == submitted_course_id,
+                            LearningEvidence.current_knowledge_node_id.is_not(None),
+                        )
+                        .distinct()
+                    )
+                )
+            try:
+                for node_id in node_ids:
+                    MasteryService(self.session).refresh_state(
+                        user_id=owner_id, course_id=submitted_course_id, knowledge_node_id=node_id
+                    )
+            except MasteryServiceError as error:
+                logger.exception(
+                    "Diagnostic mastery refresh failed after evidence sync",
+                    extra={"assessment_id": submitted_assessment_id, "error_code": error.code},
+                )
+                raise DiagnosticDomainError(
+                    "MASTERY_REFRESH_FAILED", "Diagnostic was saved but mastery could not be refreshed; retry."
+                ) from error
             if result.issues:
                 logger.warning(
                     "Diagnostic evidence sync completed with skipped invalid sources",
