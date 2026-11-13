@@ -16,11 +16,30 @@ const emit = defineEmits<{
   changed: [];
   askTutor: [request: { message: string; mode: TeachingStrategy }];
   attempts: [attempts: PracticeAttempt[]];
+  finish: [];
 }>();
 
 const adaptive = useAdaptivePractice();
 const selectedOptions = ref<string[]>([]);
 const validationMessage = ref('');
+const generationMessage = computed(() => {
+  const code = adaptive.practice.value?.generation_error;
+  if (!code) return '';
+  const messages: Record<string, string> = {
+    QUESTION_SOURCE_INSUFFICIENT: '当前知识点缺少可用于出题的资料来源。',
+    KNOWLEDGE_MODEL_NOT_READY: '课程知识结构尚未准备好，暂时无法生成题目。',
+    AI_TIMEOUT: '生成题目超时，可稍后重试。',
+    AI_RATE_LIMITED: 'AI 服务请求较多，可稍后重试。',
+    AI_NOT_CONFIGURED: 'AI 服务尚未配置，暂时无法生成题目。',
+    AI_AUTHENTICATION_FAILED: 'AI 服务认证失败，请检查服务配置。',
+    AI_PROVIDER_ERROR: 'AI 服务暂时不可用，可稍后重试。',
+    QUESTION_DUPLICATE: '生成的题目与已有题目重复，可稍后重试。',
+    QUESTION_SOURCE_INVALID: '生成题目的来源未通过检查，可稍后重试。',
+    QUESTION_QUALITY_INVALID: '生成的题目未通过格式或质量检查，可稍后重试。',
+    QUESTION_INVALID_OUTPUT: '生成的题目格式无效，可稍后重试。',
+  };
+  return messages[code] ?? '本次未能生成可用的新题，可稍后重试。';
+});
 
 const question = computed(() => adaptive.practice.value?.current_question ?? null);
 const latestAttempt = computed(() => adaptive.practice.value?.attempts.at(-1) ?? null);
@@ -33,10 +52,10 @@ watch(() => adaptive.practice.value, (practice) => {
   if (practice) emit('attempts', practice.attempts);
 });
 
-async function loadNext(): Promise<void> {
+async function loadNext(restore = false): Promise<void> {
   selectedOptions.value = [];
   validationMessage.value = '';
-  if (await adaptive.loadNext(props.sessionId)) emit('changed');
+  if (await adaptive.loadNext(props.sessionId, restore)) emit('changed');
 }
 
 async function submitAnswer(): Promise<void> {
@@ -84,11 +103,13 @@ function explainMistake(): void {
 
 watch(
   () => [props.sessionId, props.practiceAssessmentId, props.enabled] as const,
-  ([, assessmentId, enabled]) => {
+  ([sessionId, assessmentId, enabled]) => {
+    const current = adaptive.practice.value;
+    if (enabled && current?.session_id === sessionId && current.assessment_id === assessmentId) return;
     adaptive.clear();
     selectedOptions.value = [];
     validationMessage.value = '';
-    if (enabled && assessmentId !== null) void loadNext();
+    if (enabled && assessmentId !== null) void loadNext(true);
   },
   { immediate: true },
 );
@@ -102,7 +123,7 @@ watch(
         <h3 id="practice-title">针对练习</h3>
       </div>
       <div v-if="adaptive.practice.value" class="practice-meta">
-        <strong>已完成 {{ adaptive.practice.value.answered_count }} 题</strong>
+        <strong>已完成 {{ adaptive.practice.value.answered_count }} / {{ adaptive.practice.value.max_questions }} 题</strong>
         <span>{{ difficultyLabel }}</span>
       </div>
     </header>
@@ -112,13 +133,16 @@ watch(
     <LoadingBlock v-else-if="adaptive.isLoading.value" :count="2" />
 
     <div v-else-if="!adaptive.practice.value" class="practice-start">
-      <p>系统将从当前知识点的已验证题库中选题，并根据作答表现调整难度。</p>
-      <el-button type="primary" :disabled="!enabled" @click="loadNext">开始针对练习</el-button>
+      <p>系统优先选用未做过的已验证题目，题库不足时会尝试生成练习题。</p>
+      <el-button type="primary" :disabled="!enabled" @click="loadNext()">开始针对练习</el-button>
     </div>
 
     <div v-else-if="adaptive.practice.value.status === 'question_bank_empty'" class="practice-empty">
       <strong>当前知识点暂无可用练习题</strong>
-      <p>系统不会生成或重复使用不符合条件的题目。可先继续阅读课程资料。</p>
+      <p v-if="generationMessage">{{ generationMessage }}</p>
+      <p>练习已暂停，已提交的答案和学习进度已保存。</p>
+      <el-button v-if="enabled && !readOnly" plain @click="loadNext()">重试获取新题</el-button>
+      <el-button v-if="enabled && !readOnly && adaptive.practice.value.answered_count > 0" type="primary" @click="$emit('finish')">结束本轮并查看建议</el-button>
     </div>
 
     <div v-else-if="adaptive.practice.value.status === 'completed'" class="practice-summary">
@@ -130,7 +154,8 @@ watch(
           {{ adaptive.practice.value.summary.correct_count }} 题，正确率
           {{ Math.round(Number(adaptive.practice.value.summary.accuracy) * 100) }}%。
         </p>
-        <small>练习结果已保存；掌握度与学习推荐将在后续结算流程中更新。</small>
+        <small v-if="adaptive.practice.value.completion_reason === 'mastered'">已达到知识点掌握标准。</small>
+        <small v-else>练习结果与掌握度已保存。完成会话后可查看学习建议。</small>
       </div>
     </div>
 
@@ -141,6 +166,7 @@ watch(
           <el-tag size="small" effect="plain">{{ difficultyLabel }}</el-tag>
         </div>
         <h4>{{ question.stem }}</h4>
+        <p v-if="question.auto_checked" class="practice-guidance">自动生成练习题，已通过格式与来源检查，答案尚未经人工核验。</p>
         <el-checkbox-group
           v-if="question.question_type === 'multiple_choice'"
           :model-value="selectedOptions"
@@ -185,14 +211,14 @@ watch(
           <span>第 {{ latestAttempt.question_number }} 题 · {{ latestAttempt.difficulty }}</span>
         </header>
         <p>你的答案：{{ latestAttempt.selected_options.join('、') }}</p>
-        <p>正确答案：{{ latestAttempt.correct_answer.join('、') }}</p>
+        <p>{{ latestAttempt.auto_checked ? '自动生成参考答案（未经人工核验）' : '正确答案' }}：{{ latestAttempt.correct_answer.join('、') }}</p>
         <p>{{ latestAttempt.explanation }}</p>
         <small v-if="latestAttempt.source_refs.length">
           来源：{{ latestAttempt.source_refs.map((item) => item.source_reference).join('；') }}
         </small>
         <div class="practice-feedback__actions">
           <button v-if="!latestAttempt.is_correct" type="button" @click="explainMistake">让 Tutor 解释错题</button>
-          <el-button v-if="!question" type="primary" plain :icon="Right" @click="loadNext">下一题</el-button>
+          <el-button v-if="!question" type="primary" plain :icon="Right" @click="loadNext()">下一题</el-button>
         </div>
       </article>
     </template>

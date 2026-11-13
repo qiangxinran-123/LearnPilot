@@ -77,6 +77,7 @@ async function loadPage(): Promise<void> {
   }
 }
 async function openAssessment(): Promise<void> {
+  if (isStarting.value) return;
   if (unfinished.value) {
     await router.push({
       name: 'diagnostic-assessment',
@@ -90,7 +91,7 @@ async function openAssessment(): Promise<void> {
     const assessment = await createOrResumeAssessment(selectedCourseId.value);
     await router.push({ name: 'diagnostic-assessment', params: { assessmentId: assessment.id } });
   } catch (error: unknown) {
-    ElMessage.error(normalizeApiError(error).message);
+    ElMessage.error(`生成诊断题失败，可重试。 ${normalizeApiError(error).message}`);
   } finally {
     isStarting.value = false;
   }
@@ -178,6 +179,7 @@ onMounted(() => void loadPage());
             :key="selectedCourseId"
             :course-id="selectedCourseId"
             :course-name="selectedCourse.name"
+            :is-starting="isStarting"
             @start="openAssessment"
             @knowledge="openKnowledgeStructure"
           />

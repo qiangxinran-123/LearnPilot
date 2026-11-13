@@ -60,6 +60,10 @@ export function completeLearningSession(sessionId: number) {
   return httpClient.post<LearningSession>(`${basePath}/${sessionId}/complete`);
 }
 
+export function finishPractice(sessionId: number) {
+  return httpClient.post<AdaptivePractice>(`${basePath}/${sessionId}/practice/finish`);
+}
+
 export function fetchTutorMessages(sessionId: number) {
   return httpClient.get<TutorMessageList>(`${basePath}/${sessionId}/tutor/messages`);
 }
@@ -76,6 +80,10 @@ export function sendTutorMessage(
 
 export function nextPracticeQuestion(sessionId: number) {
   return httpClient.post<AdaptivePractice>(`${basePath}/${sessionId}/practice/next`);
+}
+
+export function fetchPractice(sessionId: number) {
+  return httpClient.get<AdaptivePractice>(`${basePath}/${sessionId}/practice`);
 }
 
 export function answerPracticeQuestion(

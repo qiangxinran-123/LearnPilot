@@ -6,6 +6,7 @@ import { recommendationReasonLabel } from '@/components/learning/planPresentatio
 const props = defineProps<{ session: LearningSession; retrying: boolean; attempts?: PracticeAttempt[]; continuation?: SessionContinuation | null; continuationLoading?: boolean; continuationError?: string }>();
 defineEmits<{ retry: []; back: []; next: [] }>();
 const summary = computed(() => props.session.completion_summary);
+const practiceReason = computed(() => props.session.tasks.find((task) => task.phase === 'adaptive_practice')?.progress.completion_reason);
 const change = computed(() =>
   summary.value?.mastery_changes.find((item) => item.knowledge_node_id === props.session.target_knowledge_node_id),
 );
@@ -32,6 +33,7 @@ const confidenceLabels: Record<string, string> = {
       <p>{{ session.course_name }} · {{ session.target_knowledge_node_name }}</p>
       <h2 id="summary-title">本次学习已完成</h2>
       <span>结果已保存，可随时返回查看。</span>
+      <p v-if="practiceReason === 'question_limit' || practiceReason === 'no_questions'">当前知识点待巩固，可稍后继续练习。</p>
     </header>
     <template v-if="summary">
       <div class="summary__stats" aria-label="练习结果">
@@ -45,7 +47,7 @@ const confidenceLabels: Record<string, string> = {
         <article v-for="attempt in attempts" :key="attempt.attempt_id">
           <h3>第 {{ attempt.question_number }} 题：{{ attempt.stem }}</h3>
           <p>{{ attempt.is_correct ? '回答正确' : '回答错误' }}</p>
-          <p>你的答案：{{ attempt.selected_options.join('、') }}；正确答案：{{ attempt.correct_answer.join('、') }}</p>
+          <p>你的答案：{{ attempt.selected_options.join('、') }}；{{ attempt.auto_checked ? '自动生成参考答案（未经人工核验）' : '正确答案' }}：{{ attempt.correct_answer.join('、') }}</p>
           <p>{{ attempt.explanation }}</p>
         </article>
       </details>
@@ -74,7 +76,7 @@ const confidenceLabels: Record<string, string> = {
           <ul><li v-for="code in continuation.reason_codes" :key="code">{{ recommendationReasonLabel(code) }}</li></ul>
           <el-button type="primary" :loading="retrying" :disabled="retrying" @click="$emit('next')">学习下一个知识点</el-button>
         </template>
-        <template v-else><p>本轮学习已完成。当前没有可用的下一步推荐。</p><el-button type="primary" @click="$emit('back')">返回学习页</el-button></template>
+        <template v-else><p>本轮练习已保存，可稍后继续。当前没有可用的下一步推荐。</p><el-button type="primary" @click="$emit('back')">返回学习页</el-button></template>
       </section>
     </template>
     <p v-else>学习结果暂不可用，请返回学习路径后重试。</p>

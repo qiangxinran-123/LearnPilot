@@ -36,6 +36,10 @@ class Settings(BaseSettings):
     knowledge_relationship_block_size: int = Field(default=12, ge=2, le=20)
     diagnostic_question_max_count: int = Field(default=4, ge=1, le=8)
     diagnostic_question_similarity_threshold: float = Field(default=0.9, ge=0.75, le=1.0)
+    diagnostic_replenish_max_calls: int = Field(default=8, ge=1, le=8)
+    practice_basic_target: int = Field(default=3, ge=2, le=5)
+    practice_intermediate_target: int = Field(default=4, ge=3, le=5)
+    practice_advanced_target: int = Field(default=5, ge=4, le=5)
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

@@ -143,6 +143,7 @@ void diagnostic.load();
           <main v-if="diagnostic.currentQuestion.value" class="question-card">
             <div class="question-meta"><span>第 {{ diagnostic.currentIndex.value + 1 }} 题</span><span class="type-badge">{{ typeLabel(diagnostic.currentQuestion.value.question_type) }}</span><span class="save-indicator" :class="`save-indicator--${diagnostic.saveStates[diagnostic.currentQuestion.value.assessment_question_id] ?? 'idle'}`">{{ saveLabel(diagnostic.currentQuestion.value.assessment_question_id) }}</span></div>
             <h2>{{ diagnostic.currentQuestion.value.stem }}</h2>
+            <p v-if="diagnostic.currentQuestion.value.diagnostic_auto_checked">自动生成题目，已通过格式与来源检查，答案尚未经人工核验。</p>
             <el-radio-group v-if="diagnostic.currentQuestion.value.question_type !== 'multiple_choice'" :model-value="currentAnswer[0]" :disabled="diagnostic.isReadOnly.value" class="answer-options" @change="selectSingle">
               <el-radio v-for="option in diagnostic.currentQuestion.value.options" :key="option.key" :value="option.key" border><span v-if="diagnostic.currentQuestion.value.question_type !== 'true_false'" class="option-key">{{ option.key }}</span><span v-if="diagnostic.currentQuestion.value.question_type === 'true_false'" class="boolean-option">{{ option.key === 'TRUE' ? '正确' : '错误' }}</span><template v-else>{{ option.text }}</template></el-radio>
             </el-radio-group>

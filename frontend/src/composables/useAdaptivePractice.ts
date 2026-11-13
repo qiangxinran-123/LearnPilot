@@ -1,6 +1,6 @@
 import { ref } from 'vue';
 
-import { answerPracticeQuestion, nextPracticeQuestion } from '@/services/learningSessions';
+import { answerPracticeQuestion, fetchPractice, nextPracticeQuestion } from '@/services/learningSessions';
 import { normalizeApiError } from '@/services/http';
 import type { AdaptivePractice } from '@/types/learningSession';
 
@@ -21,14 +21,14 @@ export function useAdaptivePractice() {
     isSubmitting.value = false;
   }
 
-  async function loadNext(sessionId: number): Promise<boolean> {
+  async function loadNext(sessionId: number, restore = false): Promise<boolean> {
     if (isLoading.value || isSubmitting.value) return false;
     const version = ++requestVersion;
     activeSessionId = sessionId;
     isLoading.value = true;
     errorMessage.value = '';
     try {
-      const result = await nextPracticeQuestion(sessionId);
+      const result = await (restore ? fetchPractice(sessionId) : nextPracticeQuestion(sessionId));
       if (version !== requestVersion || activeSessionId !== sessionId) return false;
       practice.value = result;
       return true;

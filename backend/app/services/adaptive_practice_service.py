@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from decimal import Decimal
+from uuid import uuid4
 
 from fastapi import Depends
 from pydantic import ValidationError
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 
@@ -15,6 +18,7 @@ from backend.app.models import (
     AssessmentStatus,
     AssessmentType,
     ConfidenceLevel,
+    KnowledgeDifficulty,
     LearningSessionStatus,
     LearningSessionTaskPhase,
     LearningSessionTaskStatus,
@@ -25,9 +29,11 @@ from backend.app.models import (
 )
 from backend.app.repositories import (
     AssessmentRepository,
+    LearningEvidenceRepository,
     LearningSessionRepository,
     QuestionRepository,
     ResponseRepository,
+    StudentKnowledgeStateRepository,
     UserRepository,
 )
 from backend.app.schemas.diagnostic import AssessmentQuestionSnapshotSchema
@@ -44,9 +50,21 @@ from backend.app.services.deterministic_objective_scorer import (
     DeterministicScoringError,
 )
 from backend.app.services.diagnostic_domain_service import DiagnosticDomainError, DiagnosticDomainService
-from backend.app.services.mastery_read_service import MasteryReadService
+from backend.app.services.diagnostic_evidence_ingestion import DiagnosticEvidenceExtractor
+from backend.app.services.diagnostic_question_generation import (
+    DiagnosticQuestionGenerationError,
+    DiagnosticQuestionGenerationService,
+)
+from backend.app.services.diagnostic_question_quality import normalize_question_stem
+from backend.app.services.learning_evidence_service import LearningEvidenceService
+from backend.app.services.learning_session_service import LearningSessionError
+from backend.app.services.learning_settlement_service import LearningSettlementService
+from backend.app.services.mastery_config import MASTERY_V1_CONFIG
+from backend.app.services.mastery_read_service import MasteryReadService, is_persisted_mastery_state_current
+from backend.app.services.mastery_service import MasteryService
 
 MAX_PRACTICE_QUESTIONS = 5
+logger = logging.getLogger(__name__)
 DIFFICULTY_ORDER = (
     QuestionDifficulty.EASY,
     QuestionDifficulty.MEDIUM,
@@ -76,7 +94,13 @@ class AdaptivePracticeError(ValueError):
 
 
 class AdaptivePracticeService:
-    def __init__(self, session: Session, settings: Settings) -> None:
+    def __init__(
+        self,
+        session: Session,
+        settings: Settings,
+        *,
+        question_generator: DiagnosticQuestionGenerationService | None = None,
+    ) -> None:
         self.session = session
         self.settings = settings
         self.sessions = LearningSessionRepository(session)
@@ -85,18 +109,131 @@ class AdaptivePracticeService:
         self.responses = ResponseRepository(session)
         self.users = UserRepository(session)
         self.scorer = DeterministicObjectiveScorer()
+        self.question_generator = question_generator or DiagnosticQuestionGenerationService(
+            session, settings.model_copy(update={"llm_max_attempts": 1})
+        )
 
     def start_or_next_for_configured_user(self, session_id: int) -> PracticeRead:
         user_id, course_id, node_id, needs_initial = self._preflight(session_id)
+        request_id = uuid4().hex
         mastery = None
         if needs_initial:
             mastery = MasteryReadService(self.session, self.settings).node_mastery(course_id, node_id)
+        result = self._next_from_bank(session_id, user_id, mastery)
+        if result.status == "question_bank_empty":
+            error_code = None
+            generated_count: int | str = "unknown"
+            checked_count = 0
+            duplicate_count = 0
+            # The bank transaction has committed. The generator manages its own
+            # source reads and persistence without holding a write during inference.
+            try:
+                batch = self.question_generator.generate_questions_for_node(
+                    owner_id=user_id,
+                    course_id=course_id,
+                    knowledge_node_id=node_id,
+                    question_type=QuestionType.SINGLE_CHOICE,
+                    difficulty=result.current_difficulty,
+                    count=1,
+                    initial_status=QuestionValidationStatus.PENDING,
+                    practice_only=True,
+                )
+                generated_count = batch.accepted_count + batch.rejected_count
+                checked_count = batch.accepted_count
+                duplicate_count = batch.rejected_count
+                logger.info(
+                    "practice_replenishment request_id=%s course_id=%s session_id=%s node_id=%s provider_mode=%s "
+                    "generated=%s accepted=%s rejected=%s",
+                    request_id,
+                    course_id,
+                    session_id,
+                    node_id,
+                    self.settings.llm_mode,
+                    batch.requested_count,
+                    batch.accepted_count,
+                    batch.rejected_count,
+                )
+            except DiagnosticQuestionGenerationError as error:
+                # The generator logs the failure. Recheck in case a concurrent
+                # request filled the bank while this one was waiting.
+                error_code = error.code
+                if error.code == "QUESTION_DUPLICATE":
+                    generated_count = 1
+                    duplicate_count = 1
+            except Exception as error:
+                self.session.rollback()
+                logger.error("Practice question generation failed: %s", type(error).__name__)
+                error_code = "QUESTION_GENERATION_FAILED"
+            result = self._next_from_bank(session_id, user_id, mastery)
+            if result.status == "question_bank_empty":
+                result.generation_error = error_code or "QUESTION_UNAVAILABLE"
+                with self.session.begin():
+                    task = self._practice_task(self._require_owned(session_id, user_id, for_update=True))
+                    task.progress = {**task.progress, "generation_error": result.generation_error}
+            logger.info(
+                "practice_replenishment_result request_id=%s course_id=%s session_id=%s node_id=%s "
+                "provider_mode=%s triggered=true generated=%s checked=%s duplicate_filtered=%s error=%s "
+                "status=%s available=%s",
+                request_id,
+                course_id,
+                session_id,
+                node_id,
+                self.settings.llm_mode,
+                generated_count,
+                checked_count,
+                duplicate_count,
+                error_code or "none",
+                result.status,
+                int(result.current_question is not None),
+            )
+        return self._settle_if_mastered(result)
 
+    def read_for_configured_user(self, session_id: int) -> PracticeRead:
+        """Restore an existing practice without requesting or creating questions."""
+        with self.session.begin():
+            user_id = self._owner_id()
+            learning_session = self._require_owned(session_id, user_id)
+            assessment = self._practice_assessment(learning_session, user_id)
+            if assessment is None:
+                raise AdaptivePracticeError("PRACTICE_NOT_STARTED", "Practice has not started.")
+            task = self._practice_task(learning_session)
+            result = self._read(learning_session, assessment, task, reused=True)
+            if result.status == "question_bank_empty":
+                result.generation_error = task.progress.get("generation_error")
+            return result
+
+    def finish_for_configured_user(self, session_id: int) -> PracticeRead:
+        with self.session.begin():
+            user_id = self._owner_id()
+            learning_session = self._require_owned(session_id, user_id, for_update=True)
+            assessment = self._practice_assessment(learning_session, user_id, for_update=True)
+            task = self._practice_task(learning_session)
+            if assessment is None:
+                raise AdaptivePracticeError("PRACTICE_NOT_STARTED", "Practice has not started.")
+            if assessment.status != AssessmentStatus.SUBMITTED:
+                self._require_practice_ready(learning_session)
+                if not _submitted_pairs(assessment) or _current_unanswered(assessment) is not None:
+                    raise AdaptivePracticeError("PRACTICE_NOT_READY", "Complete a question before ending practice.")
+                if not task.progress.get("bank_exhausted"):
+                    raise AdaptivePracticeError("PRACTICE_NOT_READY", "Practice questions are still available.")
+                self._complete_practice(assessment, task, reason="no_questions")
+            result = self._read(learning_session, assessment, task)
+        try:
+            LearningSettlementService(self.session, self.settings).complete_for_configured_user(session_id)
+        except LearningSessionError as error:
+            raise AdaptivePracticeError(error.code, error.message) from error
+        return result
+
+    def _next_from_bank(
+        self, session_id: int, user_id: int, mastery: KnowledgeNodeMasteryReadSchema | None
+    ) -> PracticeRead:
         try:
             with self.session.begin():
                 learning_session = self._require_owned(session_id, user_id, for_update=True)
-                task = self._require_practice_ready(learning_session)
                 assessment = self._practice_assessment(learning_session, user_id, for_update=True)
+                if learning_session.status == LearningSessionStatus.COMPLETED and assessment is not None:
+                    return self._read(learning_session, assessment, self._practice_task(learning_session), reused=True)
+                task = self._require_practice_ready(learning_session)
                 if assessment is None:
                     assessment = self.assessments.create(
                         Assessment(
@@ -109,6 +246,12 @@ class AdaptivePracticeService:
                     )
                     learning_session.practice_assessment_id = assessment.id
                     self._start_task(learning_session, task)
+                    target = {
+                        KnowledgeDifficulty.BASIC: self.settings.practice_basic_target,
+                        KnowledgeDifficulty.INTERMEDIATE: self.settings.practice_intermediate_target,
+                        KnowledgeDifficulty.ADVANCED: self.settings.practice_advanced_target,
+                    }.get(learning_session.target_knowledge_node.difficulty, self.settings.practice_intermediate_target)
+                    task.progress = {**task.progress, "max_questions": target}
                     desired = _initial_difficulty(mastery)
                     self._set_progress(task, desired, answered_count=0, bank_exhausted=False)
                 else:
@@ -121,7 +264,7 @@ class AdaptivePracticeService:
                     return self._read(learning_session, assessment, task, reused=True)
 
                 attempts = _submitted_pairs(assessment)
-                if len(attempts) >= MAX_PRACTICE_QUESTIONS:
+                if len(attempts) >= _question_target(task):
                     self._complete_practice(assessment, task)
                     return self._read(learning_session, assessment, task)
                 if attempts:
@@ -141,17 +284,17 @@ class AdaptivePracticeService:
                         answered_count=len(attempts),
                         bank_exhausted=True,
                     )
-                    if attempts:
-                        self._complete_practice(assessment, task)
                     return self._read(learning_session, assessment, task)
 
-                snapshot = DiagnosticDomainService.build_question_snapshot(selected)
+                snapshot = DiagnosticDomainService.build_question_snapshot(selected).model_dump(mode="json")
+                if selected.validation_status == QuestionValidationStatus.PENDING:
+                    snapshot["auto_checked"] = True
                 self.assessments.add_question_snapshot(
                     AssessmentQuestion(
                         assessment=assessment,
                         question_id=selected.id,
                         order_index=len(assessment.questions),
-                        question_snapshot=snapshot.model_dump(mode="json"),
+                        question_snapshot=snapshot,
                     )
                 )
                 self._set_progress(
@@ -167,8 +310,32 @@ class AdaptivePracticeService:
         except IntegrityError as error:
             self.session.rollback()
             return self._read_after_conflict(session_id, user_id, error)
+        except OperationalError as error:
+            raise AdaptivePracticeError(
+                "PRACTICE_STATE_CONFLICT", "Practice changed concurrently; retry the request."
+            ) from error
 
     def answer_for_configured_user(
+        self,
+        *,
+        session_id: int,
+        assessment_question_id: int,
+        payload: PracticeAnswerCreate,
+    ) -> PracticeRead:
+        result = self._record_answer(
+            session_id=session_id, assessment_question_id=assessment_question_id, payload=payload
+        )
+        return self._settle_if_mastered(result)
+
+    def _settle_if_mastered(self, result: PracticeRead) -> PracticeRead:
+        if result.completion_reason == "mastered":
+            try:
+                LearningSettlementService(self.session, self.settings).complete_for_configured_user(result.session_id)
+            except LearningSessionError as error:
+                raise AdaptivePracticeError(error.code, error.message) from error
+        return result
+
+    def _record_answer(
         self,
         *,
         session_id: int,
@@ -181,7 +348,12 @@ class AdaptivePracticeService:
             with self.session.begin():
                 user_id = self._owner_id()
                 learning_session = self._require_owned(session_id, user_id, for_update=True)
-                task = self._require_practice_ready(learning_session)
+                session_completed = learning_session.status == LearningSessionStatus.COMPLETED
+                task = (
+                    self._practice_task(learning_session)
+                    if session_completed
+                    else self._require_practice_ready(learning_session)
+                )
                 assessment = self._practice_assessment(learning_session, user_id, for_update=True)
                 if assessment is None:
                     raise AdaptivePracticeError("PRACTICE_NOT_STARTED", "Practice has not started.")
@@ -200,7 +372,7 @@ class AdaptivePracticeService:
                             "A submitted practice answer cannot be changed.",
                         )
                     return self._read(learning_session, assessment, task, reused=True)
-                if assessment.status != AssessmentStatus.IN_PROGRESS:
+                if session_completed or assessment.status != AssessmentStatus.IN_PROGRESS:
                     raise AdaptivePracticeError("PRACTICE_COMPLETED", "Practice is already complete.")
                 current = _current_unanswered(assessment)
                 if current is None or current.id != question.id:
@@ -214,6 +386,27 @@ class AdaptivePracticeService:
                 except DeterministicScoringError as error:
                     raise AdaptivePracticeError(error.code, error.message) from error
                 now = datetime.now(timezone.utc)
+                if "mastery_before" not in task.progress:
+                    prior = StudentKnowledgeStateRepository(self.session).get(
+                        user_id=user_id,
+                        course_id=learning_session.course_id,
+                        knowledge_node_id=learning_session.target_knowledge_node_id,
+                    )
+                    rows = LearningEvidenceRepository(self.session).list_for_current_node(
+                        user_id=user_id,
+                        course_id=learning_session.course_id,
+                        knowledge_node_id=learning_session.target_knowledge_node_id,
+                    )
+                    before = (
+                        float(prior.mastery_score)
+                        if prior is not None
+                        and prior.mastery_score is not None
+                        and is_persisted_mastery_state_current(
+                            node_id=learning_session.target_knowledge_node_id, state=prior, rows=rows
+                        )
+                        else None
+                    )
+                    task.progress = {**task.progress, "mastery_before": "" if before is None else str(before)}
                 response = self.responses.create_submitted(
                     Response(
                         assessment_id=assessment.id,
@@ -226,6 +419,52 @@ class AdaptivePracticeService:
                     )
                 )
                 question.response = response
+                self.session.flush()
+                plan = DiagnosticEvidenceExtractor(self.session).extract_assessment(
+                    assessment.id,
+                    expected_user_id=user_id,
+                    expected_course_id=learning_session.course_id,
+                    in_transaction=True,
+                )
+                if plan.issues:
+                    raise AdaptivePracticeError("PRACTICE_EVIDENCE_INVALID", "Practice evidence could not be recorded.")
+                evidence = LearningEvidenceRepository(self.session)
+                mastered = False
+                for candidate in plan.candidates:
+                    if candidate.source_response_id != response.id:
+                        continue
+                    snapshot = AssessmentQuestionSnapshotSchema.model_validate(question.question_snapshot)
+                    if evidence.has_similar_question_evidence(
+                        user_id=user_id,
+                        course_id=learning_session.course_id,
+                        node_id=candidate.historical_knowledge_node_ref,
+                        snapshot=question.question_snapshot,
+                    ) or evidence.has_source_question_evidence(
+                        user_id=user_id,
+                        course_id=learning_session.course_id,
+                        source_question_id=snapshot.source_question_id,
+                        source_question_version=snapshot.source_question_version,
+                        historical_knowledge_node_ref=candidate.historical_knowledge_node_ref,
+                    ):
+                        continue
+                    LearningEvidenceService(self.session).create(candidate, in_transaction=True)
+                    if candidate.current_knowledge_node_id is not None:
+                        state = (
+                            MasteryService(self.session)
+                            .refresh_state(
+                                user_id=user_id,
+                                course_id=learning_session.course_id,
+                                knowledge_node_id=candidate.current_knowledge_node_id,
+                                in_transaction=True,
+                            )
+                            .state
+                        )
+                        if state.knowledge_node_id == learning_session.target_knowledge_node_id:
+                            mastered = (
+                                state.mastery_status == MasteryStatus.GOOD_PERFORMANCE
+                                and state.confidence_level in {ConfidenceLevel.MEDIUM, ConfidenceLevel.HIGH}
+                                and state.independent_evidence_count >= MASTERY_V1_CONFIG.minimum_independent_evidence
+                            )
                 attempts = _submitted_pairs(assessment)
                 desired = _next_difficulty(attempts)
                 self._set_progress(
@@ -234,8 +473,8 @@ class AdaptivePracticeService:
                     answered_count=len(attempts),
                     bank_exhausted=False,
                 )
-                if len(attempts) >= MAX_PRACTICE_QUESTIONS:
-                    self._complete_practice(assessment, task)
+                if mastered or len(attempts) >= _question_target(task):
+                    self._complete_practice(assessment, task, mastered=mastered)
                 self.session.flush()
                 return self._read(learning_session, assessment, task)
         except IntegrityError as error:
@@ -335,20 +574,41 @@ class AdaptivePracticeService:
         candidates = [
             item
             for item in self.questions.list_for_primary_node(course_id, node_id)
-            if item.validation_status == QuestionValidationStatus.VALIDATED
+            if (
+                item.validation_status == QuestionValidationStatus.VALIDATED
+                or (
+                    item.validation_status == QuestionValidationStatus.PENDING
+                    and item.generation_metadata.get("practice_only") is True
+                    and item.generation_metadata.get("validation") == "auto_checked"
+                    and item.generation_metadata.get("auto_checked_content_version") == item.content_version
+                    and item.source_refs
+                )
+            )
             and item.question_type in SUPPORTED_TYPES
             and item.id not in excluded
         ]
-        exposure = self.assessments.question_exposure_counts(
-            owner_id=owner_id,
-            question_ids=[item.id for item in candidates],
+        seen_snapshots = list(
+            self.session.scalars(
+                select(AssessmentQuestion.question_snapshot)
+                .join(Assessment, AssessmentQuestion.assessment_id == Assessment.id)
+                .where(Assessment.owner_id == owner_id, Assessment.course_id == course_id)
+            )
         )
+        # A content revision is eligible only if its (ID, version) has not been
+        # shown and its actual stem is different. A new ID alone is not enough.
+        seen_versions = {
+            (snapshot.get("source_question_id"), snapshot.get("source_question_version")) for snapshot in seen_snapshots
+        }
+        seen_stems = {normalize_question_stem(str(snapshot.get("stem", ""))) for snapshot in seen_snapshots}
+        candidates = [
+            item
+            for item in candidates
+            if (item.id, item.content_version) not in seen_versions
+            and normalize_question_stem(item.stem)
+            and normalize_question_stem(item.stem) not in seen_stems
+        ]
         bucket = {difficulty: index for index, difficulty in enumerate(DIFFICULTY_FALLBACK[desired])}
-        return min(
-            candidates,
-            key=lambda item: (bucket[item.difficulty], exposure.get(item.id, 0), item.id),
-            default=None,
-        )
+        return min(candidates, key=lambda item: (bucket[item.difficulty], item.id), default=None)
 
     def _owner_id(self) -> int:
         owner = self.users.get_by_email(self.settings.legacy_bootstrap_user)
@@ -404,20 +664,27 @@ class AdaptivePracticeService:
         bank_exhausted: bool,
     ) -> None:
         task.progress = {
+            **task.progress,
             "answered_count": answered_count,
-            "max_questions": MAX_PRACTICE_QUESTIONS,
+            "max_questions": _question_target(task),
             "current_difficulty": difficulty.value,
             "bank_exhausted": bank_exhausted,
         }
 
     @staticmethod
-    def _complete_practice(assessment: Assessment, task: LearningSessionTaskState) -> None:
+    def _complete_practice(
+        assessment: Assessment, task: LearningSessionTaskState, *, mastered: bool = False, reason: str | None = None
+    ) -> None:
         now = datetime.now(timezone.utc)
         assessment.status = AssessmentStatus.SUBMITTED
         assessment.submitted_at = assessment.submitted_at or now
         task.status = LearningSessionTaskStatus.COMPLETED
         task.completed_at = task.completed_at or now
-        task.progress = {**task.progress, "completed": True}
+        task.progress = {
+            **task.progress,
+            "completed": True,
+            "completion_reason": reason or ("mastered" if mastered else "question_limit"),
+        }
 
     @staticmethod
     def _read(
@@ -432,7 +699,7 @@ class AdaptivePracticeService:
             attempts = [_attempt_read(question, response) for question, response in pairs]
             current = _current_unanswered(assessment)
             completed = assessment.status == AssessmentStatus.SUBMITTED
-            bank_empty = bool(task.progress.get("bank_exhausted")) and not attempts and current is None
+            bank_empty = bool(task.progress.get("bank_exhausted")) and current is None
             correct = sum(item.is_correct for item in attempts)
             summary = None
             if completed:
@@ -454,9 +721,10 @@ class AdaptivePracticeService:
                 ),
                 current_question=_question_read(current) if current is not None else None,
                 answered_count=len(attempts),
-                max_questions=MAX_PRACTICE_QUESTIONS,
+                max_questions=_question_target(task),
                 attempts=attempts,
                 summary=summary,
+                completion_reason=task.progress.get("completion_reason") if completed else None,
                 reused=reused,
             )
         except ValidationError as error:
@@ -473,6 +741,13 @@ def _initial_difficulty(mastery: KnowledgeNodeMasteryReadSchema | None) -> Quest
     if mastery.mastery_status == MasteryStatus.GOOD_PERFORMANCE:
         return QuestionDifficulty.HARD
     return QuestionDifficulty.MEDIUM
+
+
+def _question_target(task: LearningSessionTaskState) -> int:
+    value = task.progress.get("max_questions")
+    return (
+        value if isinstance(value, int) and not isinstance(value, bool) and 2 <= value <= 5 else MAX_PRACTICE_QUESTIONS
+    )
 
 
 def _stored_difficulty(task: LearningSessionTaskState) -> QuestionDifficulty:
@@ -522,6 +797,7 @@ def _question_read(question: AssessmentQuestion) -> PracticeQuestionRead:
         stem=snapshot.stem,
         options=snapshot.options,
         difficulty=snapshot.difficulty,
+        auto_checked=question.question_snapshot.get("auto_checked") is True,
     )
 
 
@@ -543,6 +819,7 @@ def _attempt_read(question: AssessmentQuestion, response: Response) -> PracticeA
         points_awarded=Decimal(response.points_awarded or 0),
         source_refs=snapshot.source_refs,
         submitted_at=response.submitted_at,
+        auto_checked=question.question_snapshot.get("auto_checked") is True,
     )
 
 

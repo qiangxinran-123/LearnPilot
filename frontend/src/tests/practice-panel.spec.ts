@@ -2,12 +2,13 @@ import { flushPromises, mount } from '@vue/test-utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import PracticePanel from '@/components/learning/PracticePanel.vue';
-import { answerPracticeQuestion, nextPracticeQuestion } from '@/services/learningSessions';
+import { answerPracticeQuestion, fetchPractice, nextPracticeQuestion } from '@/services/learningSessions';
 import { ApiError } from '@/services/http';
 import type { AdaptivePractice, PracticeAttempt, PracticeQuestion } from '@/types/learningSession';
 
 vi.mock('@/services/learningSessions', () => ({
   answerPracticeQuestion: vi.fn(),
+  fetchPractice: vi.fn(),
   nextPracticeQuestion: vi.fn(),
 }));
 
@@ -75,6 +76,7 @@ describe('M7-4 adaptive practice panel', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(nextPracticeQuestion).mockResolvedValue(structuredClone(basePractice));
+    vi.mocked(fetchPractice).mockResolvedValue(structuredClone(basePractice));
   });
 
   it('starts from the server and renders a redacted single-choice question', async () => {
@@ -85,13 +87,13 @@ describe('M7-4 adaptive practice panel', () => {
     expect(wrapper.text()).toContain('直接映射缓存中');
     expect(wrapper.text()).toContain('中等');
     expect(wrapper.text()).toContain('第 1 题');
-    expect(wrapper.text()).not.toContain('/5');
+    expect(wrapper.text()).toContain('已完成 0 / 5 题');
     expect(wrapper.text()).not.toContain('最多 5 题');
     expect(wrapper.text()).not.toContain('正确答案');
   });
 
   it('refreshes the session when restoring a practice that becomes completed', async () => {
-    vi.mocked(nextPracticeQuestion).mockResolvedValue({
+    vi.mocked(fetchPractice).mockResolvedValue({
       ...structuredClone(basePractice), status: 'completed', current_question: null,
       answered_count: 1, attempts: [attempt(true)],
       summary: { answered_count: 1, correct_count: 1, accuracy: '1.00' },
@@ -173,9 +175,10 @@ describe('M7-4 adaptive practice panel', () => {
   });
 
   it('restores an existing practice and renders its completed summary', async () => {
-    vi.mocked(nextPracticeQuestion).mockResolvedValue({
+    vi.mocked(fetchPractice).mockResolvedValue({
       ...structuredClone(basePractice),
       status: 'completed',
+      completion_reason: 'question_limit',
       current_question: null,
       answered_count: 5,
       attempts: [attempt(true)],
@@ -183,10 +186,12 @@ describe('M7-4 adaptive practice panel', () => {
     });
     const wrapper = mountPanel({ practiceAssessmentId: 71 });
     await flushPromises();
-    expect(nextPracticeQuestion).toHaveBeenCalledWith(91);
+    expect(fetchPractice).toHaveBeenCalledWith(91);
+    expect(nextPracticeQuestion).not.toHaveBeenCalled();
     expect(wrapper.text()).toContain('本次练习已完成');
     expect(wrapper.text()).toContain('正确率 80%');
-    expect(wrapper.text()).toContain('将在后续结算流程中更新');
+    expect(wrapper.text()).toContain('练习结果与掌握度已保存');
+    expect(wrapper.text()).not.toContain('已达到知识点掌握标准');
   });
 
   it('shows explicit empty and recoverable API error states', async () => {
@@ -196,6 +201,10 @@ describe('M7-4 adaptive practice panel', () => {
         ...structuredClone(basePractice),
         status: 'question_bank_empty',
         current_question: null,
+      })
+      .mockResolvedValueOnce({
+        ...structuredClone(basePractice),
+        current_question: { ...question, auto_checked: true },
       });
     const wrapper = mountPanel();
     await wrapper.get('button').trigger('click');
@@ -205,6 +214,29 @@ describe('M7-4 adaptive practice panel', () => {
     await flushPromises();
     expect(nextPracticeQuestion).toHaveBeenCalledTimes(2);
     expect(wrapper.text()).toContain('暂无可用练习题');
+    await wrapper.setProps({ practiceAssessmentId: 71 });
+    expect(nextPracticeQuestion).toHaveBeenCalledTimes(2);
+    await wrapper.findAll('button').find((item) => item.text() === '重试获取新题')!.trigger('click');
+    await flushPromises();
+    expect(nextPracticeQuestion).toHaveBeenCalledTimes(3);
+    expect(wrapper.text()).toContain('答案尚未经人工核验');
+  });
+
+  it('allows ending an exhausted round with saved answers', async () => {
+    vi.mocked(fetchPractice).mockResolvedValue({
+      ...structuredClone(basePractice),
+      status: 'question_bank_empty',
+      generation_error: 'AI_TIMEOUT',
+      current_question: null,
+      answered_count: 1,
+      attempts: [attempt(true)],
+    });
+    const wrapper = mountPanel({ practiceAssessmentId: 71 });
+    await flushPromises();
+    expect(wrapper.text()).toContain('生成题目超时');
+    expect(nextPracticeQuestion).not.toHaveBeenCalled();
+    await wrapper.findAll('button').find((item) => item.text().includes('结束本轮并查看建议'))!.trigger('click');
+    expect(wrapper.emitted('finish')).toHaveLength(1);
   });
 
   it('emits safe Tutor modes before and after an incorrect answer', async () => {

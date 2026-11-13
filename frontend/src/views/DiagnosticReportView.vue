@@ -125,8 +125,9 @@ onMounted(loadReport);
               </el-tag></div></template>
             <div class="review-body"><section class="review-question"><b>完整题目：</b><p>{{ item.stem }}</p>
               <ol v-if="item.options.length"><li v-for="option in item.options" :key="option.key"><strong>{{ option.key }}.</strong> {{ option.text }}</li></ol></section>
+              <p v-if="item.diagnostic_auto_checked">自动生成题目，答案尚未经人工核验。</p>
               <p><b>你的答案：</b>{{ answerText(item, item.selected_options) }}</p>
-              <p><b>正确答案：</b>{{ answerText(item, item.correct_answer) }}</p><p><b>解析：</b>{{ item.explanation }}</p>
+              <p><b>{{ item.diagnostic_auto_checked ? '自动生成参考答案：' : '正确答案：' }}</b>{{ answerText(item, item.correct_answer) }}</p><p><b>解析：</b>{{ item.explanation }}</p>
               <p><b>主要知识点：</b>{{ item.primary_node.historical_node_name }}</p>
               <div class="source-block"><b>课程资料来源</b><p v-if="!item.source_refs.length">该历史题目未保留可展示的来源片段。</p>
                 <ul v-else><li v-for="source in item.source_refs" :key="`${source.material_id}-${source.source_reference}`">

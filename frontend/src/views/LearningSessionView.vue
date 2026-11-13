@@ -15,6 +15,7 @@ import {
   createLearningSession,
   fetchLearningSession,
   fetchSessionContinuation,
+  finishPractice,
   updateLearningSessionTask,
 } from '@/services/learningSessions';
 import { normalizeApiError } from '@/services/http';
@@ -124,7 +125,11 @@ async function refreshSession(): Promise<void> {
   if (!currentId) return;
   try {
     const updated = await fetchLearningSession(currentId);
-    if (session.value?.session_id === currentId) session.value = updated;
+    if (session.value?.session_id === currentId) {
+      const completedNow = session.value.status !== 'completed' && updated.status === 'completed';
+      session.value = updated;
+      if (completedNow) void loadContinuation(currentId);
+    }
   } catch (error: unknown) {
     actionError.value = normalizeApiError(error).message;
   }
@@ -198,6 +203,26 @@ async function settle(): Promise<void> {
     }
   } catch (error: unknown) {
     if (session.value?.session_id === id) actionError.value = normalizeApiError(error).message;
+  } finally {
+    isSettling.value = false;
+  }
+}
+
+async function finishPausedPractice(): Promise<void> {
+  const id = session.value?.session_id;
+  if (!id || isSettling.value) return;
+  isSettling.value = true;
+  actionError.value = '';
+  try {
+    await finishPractice(id);
+    const result = await fetchLearningSession(id);
+    if (session.value?.session_id === id) {
+      session.value = result;
+      attempts.value = result.practice_attempts ?? attempts.value;
+      void loadContinuation(id);
+    }
+  } catch (error: unknown) {
+    actionError.value = normalizeApiError(error).message;
   } finally {
     isSettling.value = false;
   }
@@ -332,6 +357,7 @@ watch(sessionId, load, { immediate: true });
           @changed="refreshSession"
           @attempts="attempts = $event"
           @ask-tutor="askTutor"
+          @finish="finishPausedPractice"
         />
         <el-button v-if="canWrite && practiceDone" type="primary" :loading="isSettling" :disabled="isSettling" @click="settle">完成学习并查看结果</el-button>
       </section>

@@ -67,7 +67,12 @@ class DiagnosticEvidenceExtractor:
                     "Assessment does not belong to the expected course.",
                     assessment_id=assessment_id,
                 )
-            if assessment.status != AssessmentStatus.SUBMITTED:
+            practice_in_progress = (
+                in_transaction
+                and assessment.assessment_type == AssessmentType.PRACTICE
+                and assessment.status == AssessmentStatus.IN_PROGRESS
+            )
+            if assessment.status != AssessmentStatus.SUBMITTED and not practice_in_progress:
                 raise EvidenceIngestionError(
                     "ASSESSMENT_NOT_SUBMITTED",
                     "Only submitted assessments can produce learning evidence.",
@@ -274,7 +279,7 @@ class EvidenceIngestionService:
 
     def _already_exists(self, candidate: LearningEvidenceCreateSchema) -> bool:
         with self.session.begin():
-            return (
+            existing = (
                 self.repository.get_by_identity(
                     source_type=candidate.source_type,
                     source_question_snapshot_id=candidate.source_question_snapshot_id,
@@ -282,6 +287,15 @@ class EvidenceIngestionService:
                     evidence_schema_version=candidate.evidence_schema_version,
                 )
                 is not None
+            )
+            if existing:
+                return True
+            question = self.session.get(AssessmentQuestion, candidate.source_question_snapshot_id)
+            return question is not None and self.repository.has_similar_question_evidence(
+                user_id=candidate.user_id,
+                course_id=candidate.course_id,
+                node_id=candidate.historical_knowledge_node_ref,
+                snapshot=question.question_snapshot,
             )
 
 

@@ -79,7 +79,7 @@ def test_trend_does_not_backfill_and_rejects_changed_graph(database):
         assert trend.excluded_incompatible_history
 
 
-def test_m7_settlement_creates_one_history_on_retry(practice_database):
+def test_m7_settlement_keeps_per_answer_history_on_retry(practice_database):
     from backend.app.services.learning_settlement_service import LearningSettlementService
     from backend.tests.test_m7_4_adaptive_practice import _settings
     from backend.tests.test_m7_5_settlement import _finished
@@ -87,15 +87,20 @@ def test_m7_settlement_creates_one_history_on_retry(practice_database):
     factory, ids, correct, url = practice_database
     session_id = _finished(factory, ids, correct, url)
     with factory() as session:
-        LearningSettlementService(session, _settings(url)).complete_for_configured_user(session_id)
+        statement = select(MasteryHistory).order_by(MasteryHistory.id)
+        before = [(row.id, row.evidence_fingerprint) for row in session.scalars(statement)]
+        assert len(before) == 5
+        assert len({fingerprint for _, fingerprint in before}) == 5
     with factory() as session:
         LearningSettlementService(session, _settings(url)).complete_for_configured_user(session_id)
     with factory() as session:
-        rows = list(session.scalars(select(MasteryHistory)))
-        assert len(rows) == 1
+        LearningSettlementService(session, _settings(url)).complete_for_configured_user(session_id)
+    with factory() as session:
+        rows = list(session.scalars(statement))
+        assert [(row.id, row.evidence_fingerprint) for row in rows] == before
         state = session.scalar(select(StudentKnowledgeState))
-        assert rows[0].evidence_fingerprint == state.evidence_fingerprint
-        assert rows[0].mastery_score == state.mastery_score
+        assert rows[-1].evidence_fingerprint == state.evidence_fingerprint
+        assert rows[-1].mastery_score == state.mastery_score
 
 
 def test_incompatible_versions_break_the_line_and_do_not_carry_scores(database):

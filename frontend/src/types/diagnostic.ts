@@ -109,6 +109,7 @@ export interface QuestionOption {
 
 export interface CandidateQuestion {
   assessment_question_id: number;
+  diagnostic_auto_checked?: boolean;
   order_index: number;
   question_type: DiagnosticQuestionType;
   stem: string;
@@ -212,6 +213,7 @@ export interface DiagnosticSourceReference {
 
 export interface DiagnosticQuestionReview {
   assessment_question_id: number;
+  diagnostic_auto_checked?: boolean;
   order_index: number;
   question_type: DiagnosticQuestionType;
   stem: string;

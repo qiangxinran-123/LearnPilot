@@ -186,6 +186,15 @@ describe('QuestionBankPanel', () => {
     vi.mocked(fetchKnowledgeBuildStatus).mockResolvedValue(buildStatus());
   });
 
+  it('starts bounded replenishment when the bank is short and shows loading', async () => {
+    const wrapper = await mountPanel();
+    await button(wrapper, '开始诊断').trigger('click');
+    expect(wrapper.emitted('start')).toHaveLength(1);
+    await wrapper.setProps({ isStarting: true });
+    expect(wrapper.text()).toContain('正在补充诊断题');
+    expect(button(wrapper, '正在补充诊断题').attributes('disabled')).toBeDefined();
+  });
+
   afterEach(() => {
     wrappers.splice(0).forEach((wrapper) => wrapper.unmount());
   });

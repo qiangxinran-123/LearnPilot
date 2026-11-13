@@ -45,6 +45,91 @@ from backend.app.services.learning_session_service import LearningSessionService
 from backend.app.services.tutor_service import TutorError, TutorService
 
 
+def test_exhausted_bank_does_not_complete_practice(practice_database):
+    from sqlalchemy import update
+
+    factory, ids, correct, url = practice_database
+    only_id = min(correct)
+    with factory() as db, db.begin():
+        db.execute(
+            update(Question)
+            .where(Question.course_id == ids["course"], Question.id != only_id)
+            .values(validation_status=QuestionValidationStatus.REJECTED)
+        )
+    session_id = _ready_session(factory, ids, url)
+    question = _next(factory, url, session_id).current_question
+    assert question is not None
+    _answer(factory, url, session_id, question.assessment_question_id, correct[only_id])
+    state = _next(factory, url, session_id)
+    assert state.status == "question_bank_empty"
+    assert state.current_question is None
+    assert state.answered_count == 1
+
+
+def test_new_id_with_same_stem_is_not_offered_as_fresh_practice(practice_database):
+    from sqlalchemy import update
+
+    factory, ids, correct, url = practice_database
+    first_id, duplicate_id = sorted(correct)[:2]
+    with factory() as db, db.begin():
+        first = db.get(Question, first_id)
+        duplicate = db.get(Question, duplicate_id)
+        duplicate.stem = first.stem.upper() + "!"
+        db.execute(
+            update(Question)
+            .where(Question.course_id == ids["course"], Question.id.not_in([first_id, duplicate_id]))
+            .values(validation_status=QuestionValidationStatus.REJECTED)
+        )
+    session_id = _ready_session(factory, ids, url)
+    question = _next(factory, url, session_id).current_question
+    assert question is not None and question.question_id == first_id
+    _answer(factory, url, session_id, question.assessment_question_id, correct[first_id])
+    state = _next(factory, url, session_id)
+    assert state.current_question is None
+    assert state.status == "question_bank_empty"
+    assert state.answered_count == 1
+
+
+def test_answer_immediately_records_evidence_and_replay_is_idempotent(practice_database):
+    factory, ids, correct, url = practice_database
+    session_id = _ready_session(factory, ids, url)
+    question = _next(factory, url, session_id).current_question
+    assert question is not None
+    _answer(factory, url, session_id, question.assessment_question_id, correct[question.question_id])
+    with factory() as db:
+        assert db.scalar(select(func.count()).select_from(LearningEvidence)) == 1
+        state = db.scalar(select(StudentKnowledgeState))
+        assert state is not None
+        assert state.independent_evidence_count == 1
+        assert state.mastery_score is None
+        assert state.confidence_level.value == "insufficient"
+        fingerprint = state.evidence_fingerprint
+    _answer(factory, url, session_id, question.assessment_question_id, correct[question.question_id])
+    with factory() as db:
+        assert db.scalar(select(func.count()).select_from(LearningEvidence)) == 1
+        assert db.scalar(select(StudentKnowledgeState)).evidence_fingerprint == fingerprint
+
+
+def test_answer_rolls_back_when_mastery_refresh_fails(practice_database, monkeypatch):
+    from backend.app.services.mastery_service import MasteryService
+
+    factory, ids, correct, url = practice_database
+    session_id = _ready_session(factory, ids, url)
+    question = _next(factory, url, session_id).current_question
+    assert question is not None
+
+    def fail_refresh(*args, **kwargs):
+        raise RuntimeError("test failure")
+
+    monkeypatch.setattr(MasteryService, "refresh_state", fail_refresh)
+    with pytest.raises(RuntimeError, match="test failure"):
+        _answer(factory, url, session_id, question.assessment_question_id, correct[question.question_id])
+    with factory() as db:
+        assert db.scalar(select(func.count()).select_from(Response)) == 0
+        assert db.scalar(select(func.count()).select_from(LearningEvidence)) == 0
+        assert db.scalar(select(func.count()).select_from(StudentKnowledgeState)) == 0
+
+
 @pytest.fixture
 def practice_database(tmp_path: Path):
     database_url = f"sqlite+pysqlite:///{tmp_path / 'm7_4.sqlite3'}"
@@ -74,7 +159,7 @@ def practice_database(tmp_path: Path):
             normalized_name="cache mapping",
             description="Map memory blocks into cache lines.",
             importance=KnowledgeImportance.HIGH,
-            difficulty=KnowledgeDifficulty.INTERMEDIATE,
+            difficulty=KnowledgeDifficulty.ADVANCED,
             is_active=True,
         )
         empty = KnowledgeNode(
@@ -312,7 +397,7 @@ def test_empty_bank_and_other_user_are_safe(practice_database) -> None:
     assert captured.value.code == "SESSION_NOT_FOUND"
 
 
-def test_five_answers_complete_only_practice_without_m5_or_m6_side_effects(practice_database) -> None:
+def test_five_answers_record_evidence_without_completing_session(practice_database) -> None:
     factory, ids, correct, database_url = practice_database
     session_id = _ready_session(factory, ids, database_url)
     state = _next(factory, database_url, session_id)
@@ -333,8 +418,9 @@ def test_five_answers_complete_only_practice_without_m5_or_m6_side_effects(pract
     assert state.summary.answered_count == 5
     assert state.summary.correct_count == 5
     with factory() as check:
-        assert check.scalar(select(func.count()).select_from(LearningEvidence)) == 0
-        assert check.scalar(select(func.count()).select_from(StudentKnowledgeState)) == 0
+        assert check.scalar(select(func.count()).select_from(LearningEvidence)) == 5
+        mastery = check.scalar(select(StudentKnowledgeState))
+        assert mastery is not None and mastery.independent_evidence_count == 5
     with factory() as check:
         stored = LearningSessionService(check, _settings(database_url)).get_for_configured_user(session_id)
         assert stored.status.value == "in_progress"
@@ -466,4 +552,4 @@ def test_diagnostic_history_and_resume_exclude_learning_practice(practice_databa
         assert resumed.id == formal_id
     with factory() as db:
         assert db.scalar(select(func.count()).select_from(Response)) == 1
-        assert db.scalar(select(func.count()).select_from(LearningEvidence)) == 0
+        assert db.scalar(select(func.count()).select_from(LearningEvidence)) == 1

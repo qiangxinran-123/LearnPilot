@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from collections import Counter
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 
@@ -11,6 +12,38 @@ from backend.app.ai.models import DiagnosticQuestionDraft
 def normalize_question_stem(value: str) -> str:
     normalized = unicodedata.normalize("NFKC", value).casefold()
     return "".join(character for character in normalized if character.isalnum())
+
+
+def question_angle(stem: str) -> str | None:
+    """Conservative, explainable categories for the supported two's-complement topic."""
+    text = unicodedata.normalize("NFKC", stem).casefold()
+    if "补码" not in text:
+        return None
+    if any(word in text for word in ("范围", "最小值", "最大值", "最小数", "最大数", "上限", "下限")):
+        return "表示范围"
+    if any(word in text for word in ("溢出", "加法", "减法", "运算")):
+        return "运算与溢出"
+    if any(word in text for word in ("真值", "十进制", "对应的整数", "表示的整数")):
+        return "补码转真值"
+    if any(word in text for word in ("求补码", "补码是", "补码为", "补码表示为", "补码表示是什么")):
+        return "整数转补码"
+    if any(word in text for word in ("定义", "原理", "权重", "符号位")):
+        return "表示原理"
+    return None
+
+
+def same_question_angle(first: str, second: str) -> bool:
+    angle = question_angle(first)
+    numbers_a = set(re.findall(r"(?<![a-z])\d+", unicodedata.normalize("NFKC", first).casefold()))
+    numbers_b = set(re.findall(r"(?<![a-z])\d+", unicodedata.normalize("NFKC", second).casefold()))
+    if angle is not None and angle == question_angle(second):
+        return numbers_a == numbers_b or not numbers_a or not numbers_b
+    left = normalize_question_stem(first)
+    right = normalize_question_stem(second)
+    if min(len(left), len(right)) < 12 or numbers_a != numbers_b:
+        return False
+    overlap = sum((Counter(left) & Counter(right)).values())
+    return 2 * overlap / (len(left) + len(right)) >= 0.94
 
 
 @dataclass(frozen=True)

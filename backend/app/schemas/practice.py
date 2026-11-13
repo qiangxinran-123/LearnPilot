@@ -22,6 +22,7 @@ class PracticeQuestionRead(BaseModel):
     stem: str
     options: list[QuestionOptionSchema]
     difficulty: QuestionDifficulty
+    auto_checked: bool = False
 
 
 class PracticeAttemptRead(BaseModel):
@@ -40,6 +41,7 @@ class PracticeAttemptRead(BaseModel):
     points_awarded: Decimal = Field(ge=0)
     source_refs: list[QuestionSourceRefSchema]
     submitted_at: datetime
+    auto_checked: bool = False
 
 
 class PracticeSummaryRead(BaseModel):
@@ -59,6 +61,8 @@ class PracticeRead(BaseModel):
     max_questions: int = Field(ge=1)
     attempts: list[PracticeAttemptRead]
     summary: PracticeSummaryRead | None
+    completion_reason: Literal["mastered", "question_limit", "no_questions"] | None = None
+    generation_error: str | None = None
     reused: bool = False
 
 

@@ -186,6 +186,17 @@ def get_session_continuation(
         raise _api_error(error) from error
 
 
+@router.get("/{session_id}/practice", response_model=PracticeRead)
+def read_practice_question(
+    session_id: int,
+    service: AdaptivePracticeService = Depends(get_adaptive_practice_service),
+) -> PracticeRead:
+    try:
+        return service.read_for_configured_user(session_id)
+    except AdaptivePracticeError as error:
+        raise _practice_api_error(error) from error
+
+
 @router.post("/{session_id}/practice/next", response_model=PracticeRead)
 def next_practice_question(
     session_id: int,
@@ -213,6 +224,17 @@ def answer_practice_question(
             assessment_question_id=assessment_question_id,
             payload=payload,
         )
+    except AdaptivePracticeError as error:
+        raise _practice_api_error(error) from error
+
+
+@router.post("/{session_id}/practice/finish", response_model=PracticeRead)
+def finish_practice(
+    session_id: int,
+    service: AdaptivePracticeService = Depends(get_adaptive_practice_service),
+) -> PracticeRead:
+    try:
+        return service.finish_for_configured_user(session_id)
     except AdaptivePracticeError as error:
         raise _practice_api_error(error) from error
 

@@ -32,6 +32,41 @@ def _finished(factory, ids, correct, url, *, wrong=False):
     return session_id
 
 
+def _add_unseen_questions(factory, ids, correct):
+    from copy import deepcopy
+
+    from backend.app.db.models import QuestionKnowledgeNode
+    from backend.app.models import KnowledgeRelationRole
+
+    with factory() as db, db.begin():
+        templates = [db.get(Question, question_id) for question_id in list(correct)[:5]]
+        for index, template in enumerate(templates):
+            question = Question(
+                course_id=template.course_id,
+                question_type=template.question_type,
+                stem=f"Independent new concept question {index}",
+                options=deepcopy(template.options),
+                correct_answer=deepcopy(template.correct_answer),
+                explanation=template.explanation,
+                difficulty=template.difficulty,
+                validation_status=QuestionValidationStatus.VALIDATED,
+                source_refs=deepcopy(template.source_refs),
+                generation_metadata={},
+                content_version=1,
+            )
+            db.add(question)
+            db.flush()
+            correct[question.id] = question.correct_answer
+            db.add(
+                QuestionKnowledgeNode(
+                    course_id=ids["course"],
+                    question_id=question.id,
+                    knowledge_node_id=ids["cache"],
+                    relation_role=KnowledgeRelationRole.PRIMARY,
+                )
+            )
+
+
 def test_settlement_reuses_evidence_and_mastery_on_retry(practice_database):
     factory, ids, correct, url = practice_database
     session_id = _finished(factory, ids, correct, url)
@@ -55,6 +90,22 @@ def test_settlement_reuses_evidence_and_mastery_on_retry(practice_database):
         target = next(state for state in context.mastery_states if state.knowledge_node_id == ids["cache"])
         assert target.calculation_state.value == "calculated"
         assert float(target.mastery_score) == first.completion_summary["mastery_changes"][0]["after"]
+
+
+def test_settlement_uses_mastery_before_first_answer(practice_database):
+    factory, ids, correct, url = practice_database
+    first_id = _finished(factory, ids, correct, url)
+    with factory() as db:
+        first = LearningSettlementService(db, _settings(url)).complete_for_configured_user(first_id)
+    baseline = first.completion_summary["mastery_changes"][0]["after"]
+    _add_unseen_questions(factory, ids, correct)
+    second_id = _finished(factory, ids, correct, url, wrong=True)
+    with factory() as db:
+        second = LearningSettlementService(db, _settings(url)).complete_for_configured_user(second_id)
+    change = second.completion_summary["mastery_changes"][0]
+    assert change["before"] == baseline
+    assert change["after"] < baseline
+    assert change["delta"] == round(change["after"] - baseline, 2)
 
 
 def test_unfinished_and_other_user_rejected(practice_database):
@@ -125,24 +176,22 @@ def test_single_question_resume_settlement_and_explicit_relearn(practice_databas
     first = _answer(factory, url, session_id, question.assessment_question_id, correct[only_id])
     replay = _answer(factory, url, session_id, question.assessment_question_id, correct[only_id])
     assert first.attempts[0].attempt_id == replay.attempts[0].attempt_id
-    assert _next(factory, url, session_id).status == "completed"
-    assert _next(factory, url, session_id).status == "completed"
-    with factory() as db:
+    assert _next(factory, url, session_id).status == "question_bank_empty"
+    with factory() as db, pytest.raises(LearningSessionError) as captured:
         LearningSettlementService(db, _settings(url)).complete_for_configured_user(session_id)
+    assert captured.value.code == "SESSION_NOT_READY"
     with factory() as db:
         service = LearningSessionService(db, _settings(url))
-        assert service.get_for_configured_user(session_id).practice_attempts[0].question_id == only_id
-        assert service.get_for_configured_user(session_id).practice_attempts[0].question_id == only_id
-        assert service.continuation_for_configured_user(session_id, {ids["empty"]}).recommendation is None
+        assert service.get_for_configured_user(session_id).status.value == "in_progress"
+        service.cancel_for_configured_user(session_id)
     with factory() as db:
         assert db.scalar(select(func.count()).select_from(Response)) == 1
         assert db.scalar(select(func.count()).select_from(LearningEvidence)) == 1
-        assert db.scalar(select(func.count()).select_from(LearningSession)) == 1
-
-    # Explicit relearning remains available; it is a new session, not a retry.
+    # A new session is allowed, but previously seen content is not offered again.
     relearn_id = _ready_session(factory, ids, url)
     assert relearn_id != session_id
-    assert _next(factory, url, relearn_id).current_question.question_id == only_id
+    state = _next(factory, url, relearn_id)
+    assert state.status == "question_bank_empty" and state.current_question is None
 
 
 def test_failure_rolls_back_and_recommendation_failure_can_retry(practice_database, monkeypatch):
@@ -150,14 +199,11 @@ def test_failure_rolls_back_and_recommendation_failure_can_retry(practice_databa
     session_id = _finished(factory, ids, correct, url)
     from backend.app.services.learning_settlement_service import LearningPlanService, MasteryService
 
-    original = MasteryService.refresh_state
+    # All answers have already refreshed mastery: settlement must not repeat it.
     monkeypatch.setattr(MasteryService, "refresh_state", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError()))
-    with factory() as db, pytest.raises(RuntimeError):
-        LearningSettlementService(db, _settings(url)).complete_for_configured_user(session_id)
     with factory() as db:
-        assert db.scalar(select(func.count()).select_from(LearningEvidence)) == 0
-        assert db.scalar(select(func.count()).select_from(StudentKnowledgeState)) == 0
-    monkeypatch.setattr(MasteryService, "refresh_state", original)
+        assert db.scalar(select(func.count()).select_from(LearningEvidence)) == 5
+        assert db.scalar(select(func.count()).select_from(StudentKnowledgeState)) == 1
     original_generate = LearningPlanService.generate
     monkeypatch.setattr(LearningPlanService, "generate", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError()))
     with factory() as db:
@@ -193,6 +239,7 @@ def test_parallel_settlement_has_one_effect(practice_database):
 
 def test_before_after_uses_persisted_mastery_and_can_decrease(practice_database):
     factory, ids, correct, url = practice_database
+    _add_unseen_questions(factory, ids, correct)
     first_id = _finished(factory, ids, correct, url)
     with factory() as db:
         first = LearningSettlementService(db, _settings(url)).complete_for_configured_user(first_id)
@@ -224,17 +271,20 @@ def test_wrong_target_and_evidence_failure_roll_back(practice_database, monkeypa
     def fail(*args, **kwargs):
         raise RuntimeError("evidence insert failed")
 
+    # Evidence was already committed with each answer; settlement must reuse it.
     monkeypatch.setattr(LearningEvidenceService, "create", fail)
-    with factory() as db, pytest.raises(RuntimeError):
-        LearningSettlementService(db, _settings(url)).complete_for_configured_user(session_id)
     with factory() as db:
-        assert db.scalar(select(func.count()).select_from(LearningEvidence)) == 0
-        assert db.scalar(select(func.count()).select_from(StudentKnowledgeState)) == 0
-        assert db.get(LearningSession, session_id).status.value == "in_progress"
+        result = LearningSettlementService(db, _settings(url)).complete_for_configured_user(session_id)
+        assert len(result.completion_summary["evidence_ids"]) == 5
+    with factory() as db:
+        assert db.scalar(select(func.count()).select_from(LearningEvidence)) == 5
+        assert db.scalar(select(func.count()).select_from(StudentKnowledgeState)) == 1
+        assert db.get(LearningSession, session_id).status.value == "completed"
 
 
 def test_mastery_can_increase_after_more_correct_answers(practice_database):
     factory, ids, correct, url = practice_database
+    _add_unseen_questions(factory, ids, correct)
     first_id = _finished(factory, ids, correct, url, wrong=True)
     with factory() as db:
         first = LearningSettlementService(db, _settings(url)).complete_for_configured_user(first_id)

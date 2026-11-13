@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from decimal import Decimal
+from threading import Lock
 
 from fastapi import Depends
 from sqlalchemy import select
@@ -10,7 +11,13 @@ from sqlalchemy.orm import Session
 from backend.app.core.settings import Settings, get_settings
 from backend.app.db.models import Assessment, Course, LearningEvidence, User
 from backend.app.db.session import get_db
-from backend.app.models import AssessmentStatus, AssessmentType
+from backend.app.models import (
+    AssessmentStatus,
+    AssessmentType,
+    QuestionDifficulty,
+    QuestionType,
+    QuestionValidationStatus,
+)
 from backend.app.repositories import AssessmentRepository, ResponseRepository, UserRepository
 from backend.app.schemas.assessment_scoring import AssessmentReadinessSchema
 from backend.app.schemas.diagnostic import ObjectiveAnswerSchema
@@ -26,10 +33,18 @@ from backend.app.schemas.diagnostic_api import (
 from backend.app.services.assessment_assembly_service import AssessmentAssemblyService
 from backend.app.services.diagnostic_domain_service import DiagnosticDomainError, DiagnosticDomainService
 from backend.app.services.diagnostic_evidence_ingestion import EvidenceIngestionError, EvidenceIngestionService
+from backend.app.services.diagnostic_question_generation import DiagnosticQuestionGenerationService
 from backend.app.services.diagnostic_report_service import DiagnosticReportService
 from backend.app.services.mastery_service import MasteryService, MasteryServiceError
 
 logger = logging.getLogger(__name__)
+_diagnostic_generation_locks_guard = Lock()
+_diagnostic_generation_locks: dict[tuple[int, int], Lock] = {}
+
+
+def _generation_lock(owner_id: int, course_id: int) -> Lock:
+    with _diagnostic_generation_locks_guard:
+        return _diagnostic_generation_locks.setdefault((owner_id, course_id), Lock())
 
 
 class DiagnosticExperienceService:
@@ -62,10 +77,59 @@ class DiagnosticExperienceService:
             )
             existing_id = existing.id if existing is not None else None
         if existing_id is None:
-            existing_id = (
-                AssessmentAssemblyService(self.session).assemble_initial_diagnostic(owner_id, course_id).assessment.id
-            )
+            lock = _generation_lock(owner_id, course_id)
+            if not lock.acquire(blocking=False):
+                raise DiagnosticDomainError("DIAGNOSTIC_GENERATION_BUSY", "正在生成诊断题，请稍后重试。")
+            try:
+                existing_id = self._create_with_fresh_questions(owner_id, course_id)
+            finally:
+                lock.release()
         return self.get_assessment(existing_id)
+
+    def _create_with_fresh_questions(self, owner_id: int, course_id: int) -> int:
+        assembler = AssessmentAssemblyService(self.session)
+        generator = DiagnosticQuestionGenerationService(
+            self.session, self.settings.model_copy(update={"llm_max_attempts": 1})
+        )
+        for attempt in range(self.settings.diagnostic_replenish_max_calls + 1):
+            with self.session.begin():
+                current = self.session.scalar(
+                    select(Assessment.id)
+                    .where(
+                        Assessment.owner_id == owner_id,
+                        Assessment.course_id == course_id,
+                        Assessment.assessment_type == AssessmentType.INITIAL_DIAGNOSTIC,
+                        Assessment.status.in_([AssessmentStatus.READY, AssessmentStatus.IN_PROGRESS]),
+                    )
+                    .order_by(Assessment.id.desc())
+                )
+                if current is not None:
+                    return current
+                nodes = assembler._core_nodes(course_id)
+                eligible = assembler._eligible_questions(course_id, {node.id for node in nodes})
+                unseen = assembler._unseen_questions(owner_id, course_id, eligible)
+                required = nodes[: assembler.MIN_QUESTIONS]
+                covered = {item.primary_node.id for item in unseen}
+                missing = [node.id for node in required if node.id not in covered]
+                ready = len(unseen) >= assembler.MIN_QUESTIONS and not missing
+                node_ids = [node.id for node in required]
+            if ready:
+                return assembler.assemble_initial_diagnostic(owner_id, course_id, unseen_only=True).assessment.id
+            if not node_ids:
+                raise DiagnosticDomainError("KNOWLEDGE_MODEL_NOT_READY", "课程知识结构尚未准备好。")
+            if attempt == self.settings.diagnostic_replenish_max_calls:
+                raise DiagnosticDomainError("DIAGNOSTIC_GENERATION_LIMIT", "本次补题数量达到上限，请重试继续。")
+            generator.generate_questions_for_node(
+                owner_id=owner_id,
+                course_id=course_id,
+                knowledge_node_id=missing[0] if missing else node_ids[attempt % len(node_ids)],
+                question_type=QuestionType.SINGLE_CHOICE,
+                difficulty=QuestionDifficulty.MEDIUM,
+                count=1,
+                initial_status=QuestionValidationStatus.PENDING,
+                diagnostic_auto_checked=True,
+            )
+        raise AssertionError("unreachable")
 
     def start(self, assessment_id: int) -> DiagnosticAssessmentDetailSchema:
         owner_id = self._owner_id()

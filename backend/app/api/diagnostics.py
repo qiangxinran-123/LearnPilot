@@ -190,7 +190,7 @@ def create_assessment(
 ) -> DiagnosticAssessmentDetailSchema:
     try:
         return service.create_or_resume(payload.course_id)
-    except (AssessmentAssemblyError, DiagnosticDomainError) as error:
+    except (AssessmentAssemblyError, DiagnosticDomainError, DiagnosticQuestionGenerationError) as error:
         raise _api_error(error) from error
 
 

@@ -9,6 +9,8 @@ import {
   createLearningSession,
   fetchLearningSession,
   fetchSessionContinuation,
+  finishPractice,
+  fetchPractice,
   fetchLearningSessionContent,
   fetchTutorMessages,
   nextPracticeQuestion,
@@ -36,6 +38,8 @@ vi.mock('@/services/learningSessions', () => ({
   completeLearningSession: vi.fn(),
   fetchLearningSession: vi.fn(),
   fetchSessionContinuation: vi.fn(),
+  finishPractice: vi.fn(),
+  fetchPractice: vi.fn(),
   createLearningSession: vi.fn(),
   fetchLearningSessionContent: vi.fn(),
   fetchTutorMessages: vi.fn(),
@@ -205,6 +209,7 @@ describe('M7-1 learning session workspace', () => {
     vi.mocked(fetchLearningSessionContent).mockResolvedValue(structuredClone(baseContent));
     vi.mocked(fetchTutorMessages).mockResolvedValue({ session_id: 91, messages: [] });
     vi.mocked(nextPracticeQuestion).mockResolvedValue(structuredClone(basePractice));
+    vi.mocked(fetchPractice).mockResolvedValue(structuredClone(basePractice));
     vi.mocked(fetchSessionContinuation).mockResolvedValue({ recommendation: null });
   });
 
@@ -382,6 +387,48 @@ describe('M7-1 learning session workspace', () => {
     expect(reloaded.text()).toContain('查看 Tutor 辅导记录');
     expect(reloaded.text()).toContain('该会话已结束，历史辅导记录仍可查看。');
     expect(completeLearningSession).toHaveBeenCalledTimes(1);
+  });
+
+  it('finishes a paused round once and offers the next legal node', async () => {
+    const ready = structuredClone(baseSession);
+    ready.status = 'in_progress';
+    ready.practice_assessment_id = 71;
+    ready.tasks[0]!.status = 'completed';
+    ready.tasks[1]!.status = 'completed';
+    ready.tasks[2]!.status = 'in_progress';
+    const completed = structuredClone(ready);
+    completed.status = 'completed';
+    completed.tasks[2]!.status = 'completed';
+    completed.tasks[2]!.progress = { completion_reason: 'no_questions' };
+    completed.completion_summary = {
+      practice_summary: { total_questions: 1, correct_answers: 1, accuracy: 1 },
+      mastery_changes: [],
+      evidence_ids: [1],
+      recommendation: null,
+    };
+    vi.mocked(fetchLearningSession).mockImplementation(async () =>
+      vi.mocked(finishPractice).mock.calls.length ? completed : ready,
+    );
+    vi.mocked(fetchPractice).mockResolvedValue({
+      ...structuredClone(basePractice), status: 'question_bank_empty', current_question: null,
+      answered_count: 1, generation_error: 'AI_TIMEOUT',
+    });
+    vi.mocked(fetchSessionContinuation).mockResolvedValue({
+      recommendation: { knowledge_node_id: 12, title: '下一知识点', reason_codes: [] },
+    });
+    let resolve!: (value: AdaptivePractice) => void;
+    vi.mocked(finishPractice).mockImplementation(() => new Promise((done) => { resolve = done; }));
+    const wrapper = mount(LearningSessionView);
+    await flushPromises();
+    const button = wrapper.findAll('button').find((item) => item.text().includes('结束本轮并查看建议'))!;
+    await button.trigger('click');
+    await button.trigger('click');
+    expect(finishPractice).toHaveBeenCalledTimes(1);
+    resolve({ ...basePractice, status: 'completed', current_question: null, completion_reason: 'no_questions' });
+    await flushPromises();
+    expect(wrapper.text()).toContain('当前知识点待巩固');
+    expect(wrapper.text()).toContain('下一知识点');
+    expect(wrapper.text()).toContain('学习下一个知识点');
   });
 
   it('refreshes Session status after a successful Tutor exchange', async () => {

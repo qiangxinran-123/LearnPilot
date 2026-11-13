@@ -1,7 +1,7 @@
 import { defineComponent } from 'vue';
 import { flushPromises, mount } from '@vue/test-utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { ElSelect } from 'element-plus';
+import { ElMessage, ElSelect } from 'element-plus';
 
 import DiagnoseView from '@/views/DiagnoseView.vue';
 import { fetchCourses } from '@/services/courses';
@@ -19,9 +19,9 @@ vi.mock('@/services/diagnostics', () => ({
 }));
 vi.mock('@/components/diagnostic/QuestionBankPanel.vue', () => ({
   default: defineComponent({
-    props: { courseId: Number, courseName: String },
+    props: { courseId: Number, courseName: String, isStarting: Boolean },
     emits: ['start', 'knowledge'],
-    template: '<div class="bank-stub">{{ courseName }} 题库状态<button @click="$emit(\'start\')">开始诊断</button></div>',
+    template: '<div class="bank-stub">{{ courseName }} 题库状态<span v-if="isStarting">正在补充诊断题</span><button @click="$emit(\'start\')">开始诊断</button></div>',
   }),
 }));
 
@@ -53,6 +53,25 @@ describe('DiagnoseView', () => {
     await flushPromises();
     expect(createOrResumeAssessment).toHaveBeenCalledWith(3);
     expect(push).toHaveBeenCalledWith({ name: 'diagnostic-assessment', params: { assessmentId: 19 } });
+  });
+
+  it('shows preparation progress, prevents duplicate requests and permits retry after failure', async () => {
+    let reject!: (error: Error) => void;
+    vi.mocked(createOrResumeAssessment).mockImplementationOnce(() => new Promise((_, fail) => { reject = fail; }));
+    const message = vi.spyOn(ElMessage, 'error').mockImplementation(() => ({ close: vi.fn() }));
+    const wrapper = mount(DiagnoseView);
+    await flushPromises();
+    await wrapper.get('.bank-stub button').trigger('click');
+    expect(wrapper.text()).toContain('正在补充诊断题');
+    await wrapper.get('.bank-stub button').trigger('click');
+    expect(createOrResumeAssessment).toHaveBeenCalledTimes(1);
+    reject(new Error('超时'));
+    await flushPromises();
+    expect(message).toHaveBeenCalled();
+    expect(wrapper.text()).not.toContain('正在补充诊断题');
+    await wrapper.get('.bank-stub button').trigger('click');
+    expect(createOrResumeAssessment).toHaveBeenCalledTimes(2);
+    message.mockRestore();
   });
 
   it('switches courses without retaining the previous course workspace', async () => {

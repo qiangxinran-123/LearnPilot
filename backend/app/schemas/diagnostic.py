@@ -148,6 +148,7 @@ class AssessmentQuestionSnapshotSchema(QuestionContentSchema):
     schema_version: Literal["assessment_question_v1"] = "assessment_question_v1"
     source_question_id: int = Field(gt=0)
     source_question_version: int = Field(ge=1)
+    diagnostic_auto_checked: bool = False
     knowledge_nodes: list[QuestionKnowledgeRefSchema] = Field(min_length=1, max_length=100)
     knowledge_model_version: str | None = Field(default=None, max_length=120)
     scoring_policy: ScoringPolicySchema = Field(default_factory=ScoringPolicySchema)

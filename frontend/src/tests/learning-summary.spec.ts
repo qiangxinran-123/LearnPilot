@@ -54,7 +54,7 @@ describe('learning settlement summary', () => {
     const repeated = session(0);
     repeated.completion_summary!.recommendation!.knowledge_node_id = repeated.target_knowledge_node_id;
     const wrapper = mount(LearningSummary, { props: { session: repeated, retrying: false, continuation: repeated.completion_summary!.recommendation } });
-    expect(wrapper.text()).toContain('本轮学习已完成');
+    expect(wrapper.text()).toContain('本轮练习已保存，可稍后继续');
     expect(wrapper.text()).toContain('返回学习页');
     expect(wrapper.text()).not.toContain('学习下一个知识点');
   });

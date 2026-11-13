@@ -181,6 +181,7 @@ export interface PracticeQuestion {
   stem: string;
   options: PracticeOption[];
   difficulty: QuestionDifficulty;
+  auto_checked?: boolean;
 }
 
 export interface PracticeAttempt extends PracticeQuestion {
@@ -211,6 +212,8 @@ export interface AdaptivePractice {
   max_questions: number;
   attempts: PracticeAttempt[];
   summary: PracticeSummary | null;
+  completion_reason?: 'mastered' | 'question_limit' | 'no_questions' | null;
+  generation_error?: string | null;
   reused: boolean;
 }
 import type { RecommendationReasonCode } from './learningPlan';

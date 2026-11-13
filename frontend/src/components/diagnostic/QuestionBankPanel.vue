@@ -22,7 +22,7 @@ import type {
 } from '@/types/diagnostic';
 import type { KnowledgeBuildStatus } from '@/types/knowledge';
 
-const props = defineProps<{ courseId: number; courseName: string }>();
+const props = defineProps<{ courseId: number; courseName: string; isStarting?: boolean }>();
 const emit = defineEmits<{ start: []; knowledge: [] }>();
 const state = ref<'loading' | 'ready' | 'error'>('loading');
 const errorMessage = ref('');
@@ -361,9 +361,9 @@ onBeforeUnmount(() => { disposed = true; requestVersion += 1; });
           <div><dt>待人工审核</dt><dd>{{ readiness.pending_count }}</dd></div>
         </dl>
         <div class="question-bank__primary-action">
-          <el-button v-if="readiness.can_start" type="primary" size="large" @click="emit('start')">开始诊断</el-button>
-          <el-button v-else-if="readiness.total_core_nodes === 0" type="primary" plain @click="emit('knowledge')">前往课程知识结构</el-button>
-          <el-button v-else-if="hasPreparationTargets" type="primary" size="large" :disabled="isPreparing" @click="preparationOpen = true">{{ preparationLabel }}</el-button>
+          <el-button v-if="readiness.total_core_nodes > 0" type="primary" size="large" :loading="isStarting" :disabled="isStarting" @click="emit('start')">{{ isStarting ? '正在补充诊断题' : '开始诊断' }}</el-button>
+          <el-button v-else type="primary" plain @click="emit('knowledge')">前往课程知识结构</el-button>
+          <el-button v-if="!readiness.can_start && hasPreparationTargets" plain :disabled="isPreparing || isStarting" @click="preparationOpen = true">{{ preparationLabel }}</el-button>
           <p v-else-if="readiness.pending_count > 0">请先审核待处理题目，审核结果会更新诊断准备状态。</p>
           <el-button v-if="!readiness.can_start && readiness.pending_count > 0" plain @click="questionBankOpen = true">去审核题目</el-button>
         </div>

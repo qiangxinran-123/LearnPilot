@@ -33,7 +33,11 @@ from backend.app.schemas.diagnostic import (
     QuestionSourceRefSchema,
 )
 from backend.app.schemas.question_generation import QuestionGenerationRequestSchema
-from backend.app.services.diagnostic_question_quality import DiagnosticQuestionQualityValidator
+from backend.app.services.diagnostic_question_quality import (
+    DiagnosticQuestionQualityValidator,
+    question_angle,
+    same_question_angle,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -99,7 +103,17 @@ class DiagnosticQuestionGenerationService:
         difficulty: object,
         count: int,
         initial_status: QuestionValidationStatus = QuestionValidationStatus.VALIDATED,
+        practice_only: bool = False,
+        diagnostic_auto_checked: bool = False,
     ) -> GeneratedQuestionBatch:
+        if diagnostic_auto_checked and (practice_only or initial_status != QuestionValidationStatus.PENDING):
+            raise DiagnosticQuestionGenerationError(
+                "QUESTION_GENERATION_REQUEST_INVALID", "Automatic diagnostic questions must remain pending."
+            )
+        if practice_only and initial_status != QuestionValidationStatus.PENDING:
+            raise DiagnosticQuestionGenerationError(
+                "QUESTION_GENERATION_REQUEST_INVALID", "Automatic practice questions must remain pending."
+            )
         started = time.monotonic()
         try:
             request = self._validate_request(course_id, knowledge_node_id, question_type, difficulty, count)
@@ -123,6 +137,12 @@ class DiagnosticQuestionGenerationService:
             count=request.count,
             context=ready.rendered_context,
         )
+        if diagnostic_auto_checked and "补码" in ready.node_name:
+            angles = ("表示原理", "整数转补码", "补码转真值", "表示范围", "运算与溢出")
+            used = {question_angle(stem) for stem in ready.primary_node_stems}
+            available = [angle for angle in angles if angle not in used]
+            if available:
+                messages[-1]["content"] += f"\n请优先考查资料支持的不同角度：{'、'.join(available)}；不要仅改写旧题。"
         last_error: DiagnosticQuestionGenerationError | None = None
         for attempt in range(self.settings.llm_max_attempts):
             try:
@@ -133,6 +153,12 @@ class DiagnosticQuestionGenerationService:
                 )
                 output = DiagnosticQuestionGenerationOutput.model_validate(generated.data)
                 contents = self._validate_candidates(request, ready, output.questions)
+                if diagnostic_auto_checked and any(
+                    same_question_angle(item.stem, old) for item in contents for old in ready.primary_node_stems
+                ):
+                    raise DiagnosticQuestionGenerationError(
+                        "QUESTION_DUPLICATE", "The generated question repeats an existing assessment angle."
+                    )
                 result = self._persist(
                     owner_id,
                     request,
@@ -141,6 +167,8 @@ class DiagnosticQuestionGenerationService:
                     generated.provider,
                     generated.model,
                     initial_status,
+                    practice_only=practice_only,
+                    diagnostic_auto_checked=diagnostic_auto_checked,
                 )
                 logger.info(
                     "diagnostic_question_generation operation=generate course_id=%s knowledge_node_id=%s "
@@ -299,7 +327,7 @@ class DiagnosticQuestionGenerationService:
                 if isinstance(reference, str) and isinstance(text, str) and text.strip():
                     segment_map[normalize_source_reference(reference)] = text.strip()
             resolved = resolve_source_reference(source.source_reference, set(segment_map))
-            if resolved is None or (material.id, resolved) in seen:
+            if resolved is None or resolved not in segment_map or (material.id, resolved) in seen:
                 continue
             excerpt = (source.excerpt or segment_map[resolved]).strip()
             if not excerpt:
@@ -417,6 +445,9 @@ class DiagnosticQuestionGenerationService:
         provider: str,
         model: str,
         initial_status: QuestionValidationStatus,
+        *,
+        practice_only: bool,
+        diagnostic_auto_checked: bool,
     ) -> list[Question]:
         generated_at = datetime.now(timezone.utc).isoformat()
         saved: list[Question] = []
@@ -468,6 +499,26 @@ class DiagnosticQuestionGenerationService:
                                 "automated"
                                 if initial_status == QuestionValidationStatus.VALIDATED
                                 else "pending_review"
+                            ),
+                            **(
+                                {
+                                    "practice_only": True,
+                                    "validation": "auto_checked",
+                                    "auto_checked_content_version": 1,
+                                    "semantic_review": "not_human_verified",
+                                }
+                                if practice_only
+                                else {}
+                            ),
+                            **(
+                                {
+                                    "diagnostic_auto_checked": True,
+                                    "validation": "auto_checked",
+                                    "auto_checked_content_version": 1,
+                                    "semantic_review": "not_human_verified",
+                                }
+                                if diagnostic_auto_checked
+                                else {}
                             ),
                             "context_chars": len(ready.rendered_context),
                             "source_count": len(ready.sources),

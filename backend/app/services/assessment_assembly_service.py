@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from backend.app.core.settings import Settings
 from backend.app.db.models import Assessment, AssessmentQuestion, Course, KnowledgeNode, Question
 from backend.app.models import (
     AssessmentStatus,
@@ -27,7 +28,8 @@ from backend.app.schemas.assessment_scoring import (
 )
 from backend.app.schemas.diagnostic import AssessmentQuestionSnapshotSchema
 from backend.app.services.diagnostic_domain_service import DiagnosticDomainError, DiagnosticDomainService
-from backend.app.services.diagnostic_question_quality import normalize_question_stem
+from backend.app.services.diagnostic_question_generation import DiagnosticQuestionGenerationService
+from backend.app.services.diagnostic_question_quality import normalize_question_stem, same_question_angle
 
 
 class AssessmentAssemblyError(ValueError):
@@ -66,7 +68,7 @@ class QuestionBankAssemblyPreview:
 class AssessmentAssemblyService:
     MIN_QUESTIONS = 8
     MAX_QUESTIONS = 20
-    STRATEGY_VERSION = "knowledge_coverage_greedy_v1"
+    STRATEGY_VERSION = "knowledge_coverage_history_v2"
     _IMPORTANCE_RANK = {
         KnowledgeImportance.HIGH: 0,
         KnowledgeImportance.MEDIUM: 1,
@@ -79,7 +81,9 @@ class AssessmentAssemblyService:
         self.assessments = AssessmentRepository(session)
         self.responses = ResponseRepository(session)
 
-    def assemble_initial_diagnostic(self, owner_id: int, course_id: int) -> AssembledAssessment:
+    def assemble_initial_diagnostic(
+        self, owner_id: int, course_id: int, *, unseen_only: bool = False
+    ) -> AssembledAssessment:
         try:
             with self.session.begin():
                 course = self.session.scalar(select(Course).where(Course.id == course_id, Course.owner_id == owner_id))
@@ -87,6 +91,8 @@ class AssessmentAssemblyService:
                     raise AssessmentAssemblyError("COURSE_NOT_FOUND", "Course not found.")
                 core_nodes = self._core_nodes(course_id)
                 eligible = self._eligible_questions(course_id, {node.id for node in core_nodes})
+                if unseen_only:
+                    eligible = self._unseen_questions(owner_id, course_id, eligible)
                 target = self._target_question_count(core_nodes, eligible)
                 covered_ids = {item.primary_node.id for item in eligible}
                 required_coverage_ids = {node.id for node in core_nodes[: min(len(core_nodes), target)]}
@@ -102,7 +108,10 @@ class AssessmentAssemblyService:
                         "Validated question bank cannot meet the minimum count and core knowledge coverage.",
                         statistics=statistics,
                     )
-                selected = self._select_questions(eligible, target, required_coverage_ids)
+                exposure = self.assessments.question_exposure_counts(
+                    owner_id=owner_id, question_ids=[item.question.id for item in eligible]
+                )
+                selected = self._select_questions(eligible, target, required_coverage_ids, exposure)
                 selected_node_ids = {item.primary_node.id for item in selected}
                 if len(selected) != target or not required_coverage_ids.issubset(selected_node_ids):
                     raise AssessmentAssemblyError(
@@ -122,13 +131,19 @@ class AssessmentAssemblyService:
                 snapshots: list[AssessmentQuestion] = []
                 for order_index, eligible_question in enumerate(selected):
                     snapshot = DiagnosticDomainService.build_question_snapshot(eligible_question.question)
+                    snapshot_data = snapshot.model_dump(mode="json")
+                    if (
+                        eligible_question.question.validation_status.value == "pending"
+                        and eligible_question.question.generation_metadata.get("diagnostic_auto_checked") is True
+                    ):
+                        snapshot_data["diagnostic_auto_checked"] = True
                     snapshots.append(
                         self.assessments.add_question_snapshot(
                             AssessmentQuestion(
                                 assessment_id=assessment.id,
                                 question_id=eligible_question.question.id,
                                 order_index=order_index,
-                                question_snapshot=snapshot.model_dump(mode="json"),
+                                question_snapshot=snapshot_data,
                             )
                         )
                     )
@@ -217,6 +232,7 @@ class AssessmentAssemblyService:
                     stem=snapshot.stem,
                     options=snapshot.options,
                     difficulty=snapshot.difficulty,
+                    diagnostic_auto_checked=snapshot.diagnostic_auto_checked,
                 )
             )
         return result
@@ -270,7 +286,21 @@ class AssessmentAssemblyService:
     def _eligible_questions(self, course_id: int, core_node_ids: set[int]) -> list[EligibleQuestion]:
         result: list[EligibleQuestion] = []
         seen_stems: set[str] = set()
-        for question in self.questions.list_validated_for_course(course_id):
+        owner_id = self.session.scalar(select(Course.owner_id).where(Course.id == course_id))
+        for question in self.questions.list_for_course_owner(course_id, owner_id):
+            if question.generation_metadata.get("practice_only") is True:
+                continue
+            metadata = question.generation_metadata
+            automatic = (
+                question.validation_status.value == "pending"
+                and metadata.get("diagnostic_auto_checked") is True
+                and metadata.get("validation") == "auto_checked"
+                and metadata.get("auto_checked_content_version") == question.content_version
+                and metadata.get("semantic_review") == "not_human_verified"
+                and all(metadata.get(key) for key in ("provider", "model", "prompt_version", "generated_at"))
+            )
+            if question.validation_status.value != "validated" and not automatic:
+                continue
             try:
                 content = DiagnosticDomainService.build_question_snapshot(question)
             except DiagnosticDomainError:
@@ -287,12 +317,44 @@ class AssessmentAssemblyService:
             ]
             if len(primary_links) != 1:
                 continue
+            if automatic:
+                sources = DiagnosticQuestionGenerationService(
+                    self.session, Settings(_env_file=None)
+                ).verified_sources_for_node(primary_links[0].knowledge_node.id, course_id)
+                current = {(source.material_id, source.source_reference): source.excerpt for source in sources}
+                if any(
+                    (ref.material_id, ref.source_reference) not in current
+                    or (ref.excerpt and not current[(ref.material_id, ref.source_reference)].startswith(ref.excerpt))
+                    for ref in content.source_refs
+                ):
+                    continue
             normalized_stem = normalize_question_stem(question.stem)
             if not normalized_stem or normalized_stem in seen_stems:
                 continue
             seen_stems.add(normalized_stem)
             result.append(EligibleQuestion(question, primary_links[0].knowledge_node))
         return result
+
+    def _unseen_questions(
+        self, owner_id: int, course_id: int, eligible: list[EligibleQuestion]
+    ) -> list[EligibleQuestion]:
+        snapshots = self.session.scalars(
+            select(AssessmentQuestion.question_snapshot)
+            .join(Assessment, Assessment.id == AssessmentQuestion.assessment_id)
+            .where(Assessment.owner_id == owner_id, Assessment.course_id == course_id)
+        )
+        rows = list(snapshots)
+        seen_stems = {normalize_question_stem(str(row.get("stem", ""))) for row in rows}
+        return [
+            item
+            for item in eligible
+            if normalize_question_stem(item.question.stem) not in seen_stems
+            and not any(
+                same_question_angle(item.question.stem, str(row.get("stem", "")))
+                for row in rows
+                if any(node.get("id") == item.primary_node.id for node in row.get("knowledge_nodes", []))
+            )
+        ]
 
     def _target_question_count(self, core_nodes: list[KnowledgeNode], eligible: list[EligibleQuestion]) -> int:
         core_node_count = len(core_nodes)
@@ -311,7 +373,7 @@ class AssessmentAssemblyService:
         return maximum
 
     def _select_questions(
-        self, eligible: list[EligibleQuestion], target: int, required_ids: set[int]
+        self, eligible: list[EligibleQuestion], target: int, required_ids: set[int], exposure: dict[int, int]
     ) -> list[EligibleQuestion]:
         desired_types = self._type_targets(target)
         desired_difficulties = self._difficulty_targets(target)
@@ -327,7 +389,7 @@ class AssessmentAssemblyService:
             if not candidates:
                 break
 
-            def rank(item: EligibleQuestion) -> tuple[int, int, int, int, int, int, int]:
+            def rank(item: EligibleQuestion) -> tuple[int, int, int, int, int, int, int, int]:
                 node_id = item.primary_node.id
                 uncovered_rank = 0 if node_id not in covered_nodes else 1
                 coverage_rank = (
@@ -339,6 +401,7 @@ class AssessmentAssemblyService:
                 )
                 return (
                     0 if node_id in required_ids and node_id not in covered_nodes else 1,
+                    exposure.get(item.question.id, 0),
                     uncovered_rank,
                     coverage_rank,
                     -max(type_need, 0),

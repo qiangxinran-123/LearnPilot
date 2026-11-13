@@ -38,6 +38,7 @@ class DiagnosticCandidateQuestionSchema(BaseModel):
     options: list[QuestionOptionSchema]
     difficulty: QuestionDifficulty
     saved_answer: list[str] | None = None
+    diagnostic_auto_checked: bool = False
 
 
 class DiagnosticAssessmentDetailSchema(BaseModel):
@@ -130,6 +131,7 @@ class DiagnosticQuestionReviewSchema(BaseModel):
     primary_node: DiagnosticHistoricalNodeSchema
     secondary_nodes: list[DiagnosticHistoricalNodeSchema]
     source_refs: list[DiagnosticSourceReferenceSchema]
+    diagnostic_auto_checked: bool = False
 
 
 __all__ = [

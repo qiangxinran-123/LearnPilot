@@ -327,18 +327,36 @@ class RecommendationEngine:
                 invalid_nodes=set(graph.invalid_nodes),
             )
 
+        # Mastered nodes can satisfy prerequisites but are no longer learning
+        # targets. Review recommendations are handled by the personalized path.
+        mastered_ids = {
+            candidate.knowledge_node_id
+            for candidate in context.candidates
+            if candidate.eligibility_status == CandidateEligibilityStatus.MASTERED
+        }
+        target_ids = valid_node_ids - mastered_ids
+        if not target_ids:
+            return self._unavailable_result(
+                context,
+                availability=RecommendationAvailabilityStatus.NO_ELIGIBLE_CANDIDATE,
+                reasons=[RecommendationReasonCode.NO_ELIGIBLE_CANDIDATE],
+                prerequisite_status=PrerequisiteEvaluationStatus.NOT_EVALUATED,
+            )
+
         if plan_level == LearningPlanLevel.PRELIMINARY:
             evidence_by_node = {item.knowledge_node_id: item.evidence_count for item in context.evidence_metadata}
             preferred_targets = {
                 node_id
-                for node_id in valid_node_ids
+                for node_id in target_ids
                 if evidence_by_node.get(node_id, 0) > 0
                 or states[node_id].calculation_state == KnowledgeStateAvailability.CALCULATED
             }
         else:
-            preferred_targets = set(valid_node_ids)
+            preferred_targets = target_ids
         if not preferred_targets:
-            preferred_targets = set(valid_node_ids)
+            preferred_targets = target_ids
+        if excluded and preferred_targets.issubset(excluded):
+            preferred_targets = target_ids - excluded
 
         memo: dict[int, _Resolution] = {}
 

@@ -41,7 +41,13 @@ class LearningEvidenceService:
                     "SOURCE_OWNERSHIP_MISMATCH",
                     "Evidence owner and course must match the source assessment.",
                 )
-            if assessment.status != AssessmentStatus.SUBMITTED:
+            practice_in_progress = (
+                in_transaction
+                and payload.source_type == EvidenceSourceType.PRACTICE
+                and assessment.assessment_type == AssessmentType.PRACTICE
+                and assessment.status == AssessmentStatus.IN_PROGRESS
+            )
+            if assessment.status != AssessmentStatus.SUBMITTED and not practice_in_progress:
                 raise LearningEvidenceError(
                     "SOURCE_ASSESSMENT_NOT_SUBMITTED",
                     "Diagnostic evidence requires a submitted assessment.",

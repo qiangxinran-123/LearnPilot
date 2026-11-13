@@ -88,7 +88,7 @@ class DiagnosticQuestionBankService:
         owner_id = self._owner_id()
         preview = AssessmentAssemblyService(self.session).preview_question_bank(owner_id, course_id)
         with self.session.begin():
-            questions = self.questions.list_for_course_owner(course_id, owner_id)
+            questions = self._diagnostic_questions(course_id, owner_id)
             status_counts = Counter(question.validation_status for question in questions)
             required_nodes = [
                 QuestionBankNodeSchema(
@@ -125,7 +125,7 @@ class DiagnosticQuestionBankService:
         owner_id = self._owner_id()
         with self.session.begin():
             self._require_owned_course(owner_id, course_id)
-            questions = self.questions.list_for_course_owner(course_id, owner_id, status)
+            questions = self._diagnostic_questions(course_id, owner_id, status)
             items = [self._item(question) for question in questions]
         return QuestionBankListSchema(count=len(items), questions=items)
 
@@ -133,7 +133,7 @@ class DiagnosticQuestionBankService:
         owner_id = self._owner_id()
         with self.session.begin():
             self._require_owned_course(owner_id, course_id)
-            pending = self.questions.list_for_course_owner(course_id, owner_id, QuestionValidationStatus.PENDING)
+            pending = self._diagnostic_questions(course_id, owner_id, QuestionValidationStatus.PENDING)
             eligible_ids = []
             for question in pending:
                 try:
@@ -168,7 +168,7 @@ class DiagnosticQuestionBankService:
                         "KNOWLEDGE_NODE_NOT_FOUND", "Knowledge node was not found in this course."
                     )
                 existing = self.questions.list_for_primary_node(course_id, knowledge_node_id)
-                if any(item.validation_status == QuestionValidationStatus.PENDING for item in existing):
+                if self._node_has_status(existing, knowledge_node_id, QuestionValidationStatus.PENDING):
                     raise DiagnosticQuestionBankError(
                         "QUESTION_INVALID_STATE", "A pending question for this knowledge node already requires review."
                     )
@@ -216,7 +216,7 @@ class DiagnosticQuestionBankService:
 
             with self.session.begin():
                 self._require_owned_course(owner_id, course_id)
-                existing = self.questions.list_for_course_owner(course_id, owner_id)
+                existing = self._diagnostic_questions(course_id, owner_id)
                 planned_nodes = [
                     (node.id, node.name)
                     for node in preview.required_nodes
@@ -271,7 +271,7 @@ class DiagnosticQuestionBankService:
 
             with self.session.begin():
                 pending_count = len(
-                    self.questions.list_for_course_owner(
+                    self._diagnostic_questions(
                         course_id,
                         owner_id,
                         QuestionValidationStatus.PENDING,
@@ -325,6 +325,8 @@ class DiagnosticQuestionBankService:
         return QuestionReviewResponseSchema(question=item)
 
     def _validate_for_publication(self, owner_id: int, course_id: int, question: Question) -> None:
+        if question.generation_metadata.get("practice_only") is True:
+            raise DiagnosticQuestionBankError("QUESTION_INVALID_STATE", "Practice-only questions cannot be published.")
         state = self.session.get(CourseKnowledgeBuildState, course_id)
         if state is None or state.status != "success":
             raise DiagnosticQuestionBankError(
@@ -464,12 +466,22 @@ class DiagnosticQuestionBankService:
     ) -> bool:
         return any(
             question.validation_status == status
+            and question.generation_metadata.get("practice_only") is not True
             and any(
                 link.relation_role == KnowledgeRelationRole.PRIMARY and link.knowledge_node_id == node_id
                 for link in question.knowledge_links
             )
             for question in questions
         )
+
+    def _diagnostic_questions(
+        self, course_id: int, owner_id: int, status: QuestionValidationStatus | None = None
+    ) -> list[Question]:
+        return [
+            question
+            for question in self.questions.list_for_course_owner(course_id, owner_id, status)
+            if question.generation_metadata.get("practice_only") is not True
+        ]
 
     @staticmethod
     def _item(question: Question) -> QuestionBankItemSchema:

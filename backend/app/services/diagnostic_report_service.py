@@ -143,6 +143,7 @@ class DiagnosticReportService:
                     selected_options=selected,
                     correct_answer=snapshot.correct_answer,
                     explanation=snapshot.explanation,
+                    diagnostic_auto_checked=snapshot.diagnostic_auto_checked,
                     is_correct=response.is_correct,
                     points_awarded=Decimal(response.points_awarded),
                     primary_node=node_view(primary),

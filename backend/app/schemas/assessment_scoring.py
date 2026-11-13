@@ -27,6 +27,7 @@ class AssemblyMetadataSchema(BaseModel):
 
 class CandidateAssessmentQuestionSchema(CandidateQuestionSchema):
     assessment_question_id: int = Field(gt=0)
+    diagnostic_auto_checked: bool = False
 
 
 class ObjectiveScoreResultSchema(BaseModel):

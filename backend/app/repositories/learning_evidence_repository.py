@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.db.models import Assessment, AssessmentQuestion, LearningEvidence, Response
 from backend.app.models import AssessmentStatus, AssessmentType, EvidenceSourceType
+from backend.app.services.diagnostic_question_quality import normalize_question_stem
 
 
 class LearningEvidenceRepository:
@@ -15,6 +16,21 @@ class LearningEvidenceRepository:
         self.session.add(evidence)
         self.session.flush()
         return evidence
+
+    def has_similar_question_evidence(self, *, user_id: int, course_id: int, node_id: int, snapshot: dict) -> bool:
+        stem = normalize_question_stem(str(snapshot.get("stem", "")))
+        if not stem:
+            return False
+        previous = self.session.scalars(
+            select(AssessmentQuestion.question_snapshot)
+            .join(LearningEvidence, LearningEvidence.source_question_snapshot_id == AssessmentQuestion.id)
+            .where(
+                LearningEvidence.user_id == user_id,
+                LearningEvidence.course_id == course_id,
+                LearningEvidence.historical_knowledge_node_ref == node_id,
+            )
+        )
+        return any((old := normalize_question_stem(str(item.get("stem", "")))) and old == stem for item in previous)
 
     def get_by_id(self, evidence_id: int) -> LearningEvidence | None:
         return self.session.get(LearningEvidence, evidence_id)
@@ -121,15 +137,16 @@ class LearningEvidenceRepository:
                     and_(
                         LearningEvidence.source_type == EvidenceSourceType.DIAGNOSTIC,
                         Assessment.assessment_type == AssessmentType.INITIAL_DIAGNOSTIC,
+                        Assessment.status == AssessmentStatus.SUBMITTED,
                     ),
                     and_(
                         LearningEvidence.source_type == EvidenceSourceType.PRACTICE,
                         Assessment.assessment_type == AssessmentType.PRACTICE,
+                        Assessment.status.in_([AssessmentStatus.SUBMITTED, AssessmentStatus.IN_PROGRESS]),
                     ),
                 ),
                 Assessment.owner_id == user_id,
                 Assessment.course_id == course_id,
-                Assessment.status == AssessmentStatus.SUBMITTED,
                 Response.assessment_id == LearningEvidence.source_assessment_id,
                 Response.assessment_question_id == LearningEvidence.source_question_snapshot_id,
                 Response.submitted_at.is_not(None),

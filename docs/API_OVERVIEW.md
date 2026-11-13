@@ -163,6 +163,8 @@ MaterialContent + parser segments
 | PATCH | `/api/learning/sessions/{session_id}/tasks/{phase}` | 更新有序学习任务状态。 |
 | GET/POST | `/api/learning/sessions/{session_id}/tutor/messages` | 读取导师历史或发送消息；发送需 `Idempotency-Key` 请求头。 |
 | POST | `/api/learning/sessions/{session_id}/practice/next` | 开始或恢复练习并获取下一状态。 |
+| GET | `/api/learning/sessions/{session_id}/practice` | 读取当前练习状态，供刷新或重新进入时恢复。 |
+| POST | `/api/learning/sessions/{session_id}/practice/finish` | 在允许的状态下结束当前练习。 |
 | PUT | `/api/learning/sessions/{session_id}/practice/responses/{assessment_question_id}` | 提交并确定性评分一题。 |
 | POST | `/api/learning/sessions/{session_id}/complete` | 结算已完成会话，保存练习证据、掌握状态和总结。 |
 | POST | `/api/learning/sessions/{session_id}/cancel` | 取消可取消的会话。 |

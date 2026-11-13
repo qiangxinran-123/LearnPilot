@@ -283,7 +283,7 @@ def source_question_ids(rows: tuple[AssessmentQuestion, ...]) -> list[int]:
     return [AssessmentQuestionSnapshotSchema.model_validate(row.question_snapshot).source_question_id for row in rows]
 
 
-def test_assembly_uses_only_eligible_bank_and_is_deterministic(database) -> None:
+def test_assembly_uses_eligible_bank_and_prioritizes_unseen_questions(database) -> None:
     factory, seed = database
     with factory() as session:
         first = AssessmentAssemblyService(session).assemble_initial_diagnostic(seed.owner_id, seed.course_id)
@@ -305,7 +305,27 @@ def test_assembly_uses_only_eligible_bank_and_is_deterministic(database) -> None
         assert sum(first.metadata.difficulty_distribution.values()) == 10
     with factory() as session:
         second = AssessmentAssemblyService(session).assemble_initial_diagnostic(seed.owner_id, seed.course_id)
-        assert source_question_ids(second.questions) == first_ids
+        second_ids = source_question_ids(second.questions)
+        assert len(second_ids) == len(first_ids)
+        assert set(second_ids) != set(first_ids)
+        assert second.metadata.covered_knowledge_nodes == 5
+
+
+def test_practice_only_question_cannot_enter_diagnostic_even_if_validated(database) -> None:
+    factory, seed = database
+    with factory() as session, session.begin():
+        practice = add_question(
+            session,
+            course_id=seed.course_id,
+            node_id=seed.node_ids[0],
+            index=999,
+        )
+        practice.generation_metadata = {"practice_only": True, "validation": "auto_checked"}
+        practice_id = practice.id
+    with factory() as session:
+        assembled = AssessmentAssemblyService(session).assemble_initial_diagnostic(seed.owner_id, seed.course_id)
+        assert practice_id not in source_question_ids(assembled.questions)
+        assert len(assembled.questions) >= 8
 
 
 def test_dynamic_question_count_has_eight_and_twenty_boundaries(database) -> None:
@@ -426,7 +446,9 @@ def test_assembly_snapshot_is_complete_immutable_and_candidate_safe(database) ->
             "stem",
             "options",
             "difficulty",
+            "diagnostic_auto_checked",
         }
+        assert public["diagnostic_auto_checked"] is False
         assert "correct_answer" not in public
         assert "explanation" not in public
         assert "scoring_policy" not in public

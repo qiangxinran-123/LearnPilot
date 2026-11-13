@@ -116,6 +116,10 @@ class LearningSettlementService:
                             and is_persisted_mastery_state_current(node_id=node_id, state=state, rows=rows)
                             else None
                         )
+                    practice_task = next((task for task in item.tasks if "mastery_before" in task.progress), None)
+                    if practice_task is not None:
+                        raw_before = practice_task.progress["mastery_before"]
+                        before[item.target_knowledge_node_id] = float(raw_before) if raw_before != "" else None
                     evidence_ids = []
                     changed_nodes: set[int] = set()
                     for candidate in plan.candidates:
@@ -138,6 +142,13 @@ class LearningSettlementService:
                             continue
                         snapshot_row = self.session.get(AssessmentQuestion, candidate.source_question_snapshot_id)
                         snapshot = AssessmentQuestionSnapshotSchema.model_validate(snapshot_row.question_snapshot)
+                        if self.evidence.has_similar_question_evidence(
+                            user_id=user_id,
+                            course_id=item.course_id,
+                            node_id=candidate.historical_knowledge_node_ref,
+                            snapshot=snapshot_row.question_snapshot,
+                        ):
+                            continue
                         if self.evidence.has_source_question_evidence(
                             user_id=user_id,
                             course_id=item.course_id,
@@ -157,13 +168,18 @@ class LearningSettlementService:
                             state = self.states.get(
                                 user_id=user_id, course_id=item.course_id, knowledge_node_id=node_id
                             )
-                            if state is not None and before[node_id] is not None:
+                            if state is not None and state.mastery_score is not None:
+                                after = float(state.mastery_score) if state.mastery_score is not None else None
                                 changes.append(
                                     {
                                         "knowledge_node_id": node_id,
                                         "before": before[node_id],
-                                        "after": before[node_id],
-                                        "delta": 0,
+                                        "after": after,
+                                        "delta": (
+                                            round(after - before[node_id], 2)
+                                            if after is not None and before[node_id] is not None
+                                            else None
+                                        ),
                                         "confidence": state.confidence_level.value,
                                         "calculated_at": state.calculated_at.isoformat(),
                                     }

@@ -73,7 +73,7 @@ export function rejectDiagnosticQuestion(
 }
 
 export function createOrResumeAssessment(courseId: number): Promise<Assessment> {
-  return httpClient.post<Assessment>('/diagnostics/assessments', { course_id: courseId });
+  return httpClient.post<Assessment>('/diagnostics/assessments', { course_id: courseId }, { timeout: 1_000_000 });
 }
 
 export function fetchAssessments(): Promise<AssessmentListResponse> {
