@@ -1,308 +1,198 @@
 # LearnPilot
 
-LearnPilot 是面向大学理工科课程的 AI 学习诊断与个性化学习系统。
+**从课程资料出发，理解知识结构，发现学习薄弱点，规划下一步学习。**
 
-当前基线为 **LearnPilot V1 / M9-D' COMPLETE，项目进度 96%**；用户确认 M9-C' 完成与本轮浏览器体验通过。M9-B' 已探索性关闭，系统性 AI 质量评测与原预算守卫保留为 DEFERRED；M10 已具备准入条件但尚未开始。详见 [M9 阶段更新](docs/M9_OVERVIEW.md)。旧版 LearnPilot V0.x 的 JSON 原型、原生前端和比赛材料仍保留用于追溯，但不再代表当前运行架构。核心链路为：
+LearnPilot 是一个面向课程学习的 AI 辅助学习系统。它将课程资料整理为可追溯的知识点与知识关系，结合诊断作答形成学习证据，再依据知识依赖和已有学习状态生成学习建议。
 
-```text
-课程资料 → 知识建模 → AI 题库 → 学习诊断 → 确定性评分
-  → Learning Evidence → Mastery/Confidence → 个性化知识地图
-  → 推荐排序 → 学习计划 → 学习会话、AI 导师与自适应练习
-  → 练习证据 → 掌握状态和推荐刷新 → 进展、历史与复习提示
-```
+[在线体验](https://learnpilot-contest-demo-k1iz.onrender.com/) · [快速开始](#快速开始) · [配置模型](#配置模型) · [项目结构](#项目结构)
 
-## 当前能力
+> 在线体验提供一门预置课程。免费服务可能需要时间唤醒，休眠或重启后临时学习进度会被清除。不同浏览器使用独立会话；同一浏览器共享 Cookie 的使用者会共享会话。在线服务依赖外部模型与托管资源，可能受额度或可用性限制。
 
-- 使用 Vue 3、TypeScript、Vite、Pinia 和 Element Plus 提供首页、课程、诊断、学习、进展五个一级页面。
-- 通过 FastAPI 提供课程 CRUD、资料上传/删除/搜索、分页正文、结构化摘要、学习卡片和单资料问答接口。
-- 支持 TXT、MD、PDF、DOCX 资料；默认上传上限为 20 MiB。PPT/PPTX 当前未启用。
-- 使用 SQLAlchemy 与 Alembic 持久化课程、资料、解析正文和 AI 产物；本地演示使用 SQLite，部署可配置 MySQL 8。
-- AI 默认使用显式配置的 provider；`LLM_MODE=mock` 只用于本地验收，不会作为生产环境静默回退。
-- M3-B 从已解析资料中提取带来源证据的候选知识点；M3-C 保守归一化并生成规范知识节点。
-- M3-D 生成并验证 `CONTAINS` 层级与 `PREREQUISITE` 先修关系，保存关系依据。
-- M3-E 将课程详情升级为学习工作台：默认学习概览、完整资料工具、知识层级树与辅助关系图、独立知识详情，以及可恢复的知识构建/更新状态。
-- M4 支持基于知识节点的诊断题生成、题目质量与来源验证、自动组卷、单选/判断/多选、自动保存与恢复、确定性评分、历史诊断、知识点级报告及错题解析。
-- M5 支持 Learning Evidence、历史诊断证据幂等导入、Mastery Score、Confidence、学生知识状态、可解释证据、课程结构/掌握状态地图切换、来源原文片段预览和资料 AI 学习工具入口提示。
-- M6 根据掌握状态、知识重要度及先修关系生成可解释推荐；保存并复用课程学习计划，在首页和学习页展示目标与 1–3 项学习任务。证据不足时明确区分个性化、初步和基础计划，不把未知掌握度当作零分。
-- M6 体验完善包括课程级诊断题准备与人工审核入口、未完成诊断恢复，以及新增资料后的显式知识同步和题目缺口补充。
-- M7 将学习计划接入可恢复的学习会话，按任务顺序呈现课程资料和来源；AI 导师结合当前学习内容提供提示、引导和讲解。
-- M7 自适应练习根据答题表现调整难度；完成会话后将真实练习结果转为可追溯证据，刷新掌握状态与后续推荐，并展示学习总结。
-- M8 提供课程进展总览、知识点掌握比较、真实历史快照趋势、诊断与学习历史，以及基于已有证据的复习风险提示。
-- M9 完善诊断组卷覆盖规则和重复练习反馈，开展受控 AI 质量探索，并完成产品体验与演示验收；系统性评测仍待完成。
-- 后续体验完善包括学习和诊断流程、批量题目审核、课程切换及构建状态反馈；同源同版本的重复练习不会重复新增练习证据。
+## 功能
 
-M3 建立课程知识模型，M4/M5 提供诊断与学生知识状态，M6 生成推荐与学习计划，M7 完成学习、练习与反馈闭环。Mastery 是基于有效 Learning Evidence 的确定性掌握度估计，不是单次诊断正确率，也不是经过教育测量学标定的真实掌握概率。图坐标等展示状态不会写入领域数据。
+- **课程资料**：创建课程，上传并解析 TXT、Markdown、PDF、DOCX，浏览原文、摘要和学习卡片。
+- **知识结构**：从资料中抽取知识点，组织层级与先修关系，并在知识地图中浏览关联及资料来源。
+- **学习诊断**：根据合格题库组织测评，支持作答恢复、确定性评分、诊断报告和错题解析。
+- **学习状态与建议**：从实际作答生成学习证据，估计知识掌握状态和置信度，结合先修关系生成可解释的学习计划。
+- **学习与练习**：围绕学习计划查看资料、向 AI 导师提问并开展练习，结果可用于更新学习状态。
+- **学习进展**：查看知识状态、已记录的学习历史和复习提示。
+
+掌握度是基于已有证据的系统估计，并非经过教育测量学标定的真实掌握概率。证据不足时，相关知识点会保留待评估状态。
+
+## 工作流程
+
+~~~text
+课程资料 → 文档解析 → 知识点与来源 → 层级及先修关系
+                                      ↓
+学习建议 ← 知识状态 ← 学习证据 ← 诊断与练习
+~~~
+
+模型参与资料理解、知识提取、题目生成和问答；评分、证据记录及学习状态计算由应用逻辑处理。模型生成内容需要结合原始资料核查。
 
 ## 技术栈
 
 | 层次 | 技术 |
 | --- | --- |
-| 前端 | Vue 3、TypeScript、Vite、Vue Router、Pinia、Element Plus、Axios |
-| 后端 | FastAPI、Pydantic、SQLAlchemy、Alembic |
-| 数据库 | SQLite（本地演示）、MySQL 8（目标部署） |
-| 文档解析 | TXT、Markdown、PDF、DOCX |
-| 质量检查 | pytest、Ruff、Vitest、vue-tsc、ESLint、Prettier |
+| 前端 | Vue 3、TypeScript、Vite、Vue Router、Pinia、Element Plus、AntV G6 |
+| 后端 | Python、FastAPI、Pydantic、SQLAlchemy、Alembic |
+| 数据与文件 | SQLite、文件系统；数据库配置支持 MySQL |
+| AI 接口 | OpenAI 兼容的 Chat Completions 接口，支持显式 mock 模式 |
+| 测试与检查 | pytest、Ruff、Vitest、vue-tsc、ESLint |
 
-## 快速启动
+## 快速开始
 
-### 1. 后端
+### 环境要求
 
-项目要求 Python 3.14 或更高版本。在仓库根目录执行：
+- Linux 或 Windows 的 WSL；下方命令使用 Bash。Windows 原生运行流程尚未完整验证。
+- Python 3.14 或更高版本；已验证 Python 3.14。
+- Node.js >= 22.12.0 且 < 25，npm >= 10。
+- Git、curl，以及安装依赖时可用的网络。
 
-```bash
+基础环境和依赖已就绪时，以下流程以约 10 分钟内启动为目标；首次安装依赖所需时间取决于网络。后端依赖及其版本见 [requirements.txt](requirements.txt)，前端依赖见 [frontend/package.json](frontend/package.json) 和 [frontend/package-lock.json](frontend/package-lock.json)。
+
+### 安装
+
+~~~bash
+git clone https://github.com/qiangxinran-123/LearnPilot.git
+cd LearnPilot
+
 python3.14 -m venv .venv
 .venv/bin/python -m pip install -r requirements.txt
+(cd frontend && npm ci)
+~~~
+
+### 使用预置课程
+
+~~~bash
+bash scripts/start_demo.sh
+~~~
+
+脚本会创建独立的临时数据库和上传目录，加载一门预置课程并启动前后端。启动完成后访问 <http://127.0.0.1:15173>；保持终端运行，按 Ctrl+C 停止服务。
+
+预置课程包含 1 份课程摘录、17 个知识节点、15 条知识关系和 10 道经历史审核的诊断题，可直接浏览知识结构和来源并开始首次诊断。每次运行脚本都会创建新的副本，不会覆盖现有开发数据库；副本路径会显示在终端中。
+
+**该脚本固定使用 mock 模式，不调用真实模型。** 已有题库的首次诊断无需 API Key；要使用真实问答或生成能力，请按下方说明手动配置和启动。演示数据与来源说明见 [demo_data/README.md](demo_data/README.md)。
+
+如默认端口被占用，可指定其他端口：
+
+~~~bash
+DEMO_BACKEND_PORT=18081 DEMO_FRONTEND_PORT=15174 bash scripts/start_demo.sh
+~~~
+
+## 配置模型
+
+后端从项目根目录的私有 .env 文件和进程环境变量读取配置，进程环境变量优先。首次配置时复制模板：
+
+~~~bash
 cp -n .env.example .env
+~~~
+
+编辑 .env 中的以下项目：
+
+~~~dotenv
+# provider 使用真实模型；mock 使用模拟响应
+LLM_MODE=provider
+LLM_API_KEY=在本地填写密钥
+LLM_BASE_URL=https://api.deepseek.com
+LLM_MODEL=deepseek-flash
+
+# 知识抽取的单次输出上限，可按模型能力调整
+KNOWLEDGE_EXTRACTION_MAX_OUTPUT_TOKENS=4096
+~~~
+
+上述地址和模型 ID 是项目曾使用的 DeepSeek 配置；实际可用性、调用费用和模型权限以服务商及账户状态为准。LLM_MODE=mock 明确使用模拟输出，不代表真实模型已接通。真实密钥只保存在私有环境中，不应写入前端、代码仓库或日志。
+
+数据库、上传目录、超时及其他选项见 [.env.example](.env.example)。在本地运行时常用：
+
+| 变量 | 作用 |
+| --- | --- |
+| DATABASE_URL | 数据库连接地址；示例文件默认使用本地 SQLite |
+| UPLOAD_ROOT | 上传资料的存储目录 |
+| MAX_UPLOAD_BYTES | 单个上传文件大小上限 |
+| LLM_MODE | 选择 provider 或 mock |
+| LLM_API_KEY、LLM_BASE_URL、LLM_MODEL | 真实模型的服务端配置 |
+| LLM_TIMEOUT_SECONDS、LLM_MAX_ATTEMPTS | 模型请求的超时与重试次数 |
+| KNOWLEDGE_EXTRACTION_MAX_OUTPUT_TOKENS | 知识抽取的单次输出上限 |
+| VITE_BACKEND_ORIGIN | 前端开发服务器的后端代理地址，默认 http://127.0.0.1:8000 |
+
+在线演示的会话与调用限制由 render.yaml 和服务端环境变量配置，本地普通运行不需要配置这些选项。
+
+## 手动启动
+
+以下步骤适用于从一个新的空数据库开始。确认 .env 中的 DATABASE_URL 和 UPLOAD_ROOT 指向可写位置，并且不会覆盖已有数据；如需真实 AI，请先完成模型配置。
+
+在仓库根目录启动后端：
+
+~~~bash
 .venv/bin/alembic upgrade head
-.venv/bin/python -m uvicorn backend.main:app --reload
-```
+.venv/bin/python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000
+~~~
 
-`.env.example` 提供显式的本地 SQLite 地址 `sqlite+pysqlite:///./learnpilot-demo.sqlite3`。`cp -n` 不会覆盖已有的私有 `.env`；真实数据库凭据和模型密钥只应写入被 Git 忽略的 `.env`。
+另开终端启动前端：
 
-启动后可访问：
+~~~bash
+cd frontend
+npm run dev -- --host 127.0.0.1 --port 5173 --strictPort
+~~~
 
-- 应用/API 服务：<http://127.0.0.1:8000>
-- Swagger 文档：<http://127.0.0.1:8000/docs>
+- 应用：<http://127.0.0.1:5173>
+- API 文档：<http://127.0.0.1:8000/docs>
+- OpenAPI JSON：<http://127.0.0.1:8000/openapi.json>
 - 健康检查：<http://127.0.0.1:8000/health>
 
-### 2. 前端开发服务器
+空数据库不包含课程或题库。可在应用中创建课程、上传资料并构建知识结构，再准备和审核诊断题。真实模型调用需要有效的 provider 配置和网络。
 
-项目支持 Node.js `>=22.12.0 <25`、npm `>=10`：
+如果需要使用预置课程同时调用真实模型，可以先运行 scripts/init_demo.py 创建独立副本，再按 [演示数据说明](demo_data/README.md) 设置 DATABASE_URL 和 UPLOAD_ROOT，并以 provider 模式手动启动。不要对打包的原始快照直接执行迁移或写入。
 
-```bash
-cd frontend
-npm ci
-npm run dev
-```
+## 开发与测试
 
-Vite 会将 `/api/*` 和 `/health` 代理到 `http://127.0.0.1:8000`。运行 `npm run build` 后，FastAPI 会托管 `frontend/dist/` 并提供 SPA history fallback，同时保留 API 与健康检查路由。
+在项目根目录运行后端检查：
 
-## AI 配置
-
-`.env.example` 默认使用 `LLM_MODE=provider`，但不包含密钥。真实模型调用至少需要在私有 `.env` 中配置：
-
-```dotenv
-LLM_MODE=provider
-LLM_API_KEY=...
-LLM_BASE_URL=...
-LLM_MODEL=...
-```
-
-未完成 provider 配置时，AI 接口会返回 `AI_NOT_CONFIGURED`。仅做本地功能验收时可以显式设置 `LLM_MODE=mock`；响应会保留 mock 来源，不代表真实模型已经接通。摘要输入上限默认是 200000 字符，超过限制会返回 `AI_INPUT_TOO_LARGE`。
-
-## 数据库与迁移
-
-当前 Alembic 迁移链：
-
-1. `0001_m1a_foundation`：用户、课程、资料和归属关系；
-2. `0002_m2_course_material_ai`：完整解析正文、分段来源、摘要、卡片和 AI 审计字段；
-3. `0003_m3a_knowledge_model`：知识节点、知识关系和可追溯来源；
-4. `0004_m3b_knowledge_extraction`：抽取运行、候选知识点和候选来源；
-5. `0005_m3c_canonicalization`：归一化运行、候选解析和节点生命周期；
-6. `0006_m3d_relationships`：关系运行、关系证据和生成关系归属；
-7. `0007_m3e_workspace_build_state`：课程级持久化构建任务、阶段、租约、资料快照和失败恢复状态。
-8. `0008_m4a_diagnostic_domain_foundation`：诊断、题目快照、结构化回答和确定性评分基础；
-9. `0009_m4e_diagnostic_report_policy`：诊断报告策略与历史结果约束；
-10. `0010_m5a_learning_evidence_foundation`：Learning Evidence 基础模型、来源身份与幂等约束；
-11. `0011_m5b_evidence_current_node_mapping`：历史知识节点当前映射状态；
-12. `0012_m5c_student_knowledge_state`：学生知识状态、Mastery/Confidence 结果与算法版本；
-13. `0013_m6_learning_plans`：课程学习计划与有序任务；
-14. `0014_m6_ux_fix4_sync_counts`：知识同步新增/复用节点计数；
-15. `0015_m7_1_learning_sessions`：学习会话与任务状态；
-16. `0016_m7_3_tutor_messages`：会话内导师消息；
-17. `0017_m7_4_practice_assessment`：练习测评类型；
-18. `0018_m7_5_practice_evidence`：练习证据来源；
-19. `0019_m8_mastery_history`：掌握状态历史快照。
-
-旧 `backend/app/data/courses.json` 不会在启动时自动导入。先执行 dry-run，再决定是否写入目标数据库：
-
-```bash
-.venv/bin/python -m backend.scripts.import_legacy_json \
-  --database-url "sqlite+pysqlite:///./learnpilot-demo.sqlite3" \
-  --source backend/app/data/courses.json \
-  --dry-run
-```
-
-确认结果后移除 `--dry-run`。导入器不会从 `.env` 猜测目标数据库地址；请显式传入并在操作前保留备份。
-
-## API 概览
-
-主要接口包括：
-
-- `GET/POST /api/courses`
-- `GET/PATCH/DELETE /api/courses/{course_id}`
-- `GET/POST /api/courses/{course_id}/materials`
-- `POST /api/courses/{course_id}/materials/upload`
-- `GET/DELETE /api/materials/{material_id}`
-- `GET /api/materials/{material_id}/content`
-- `GET/POST /api/materials/{material_id}/summary`
-- `GET/POST /api/materials/{material_id}/cards`
-- `POST /api/materials/{material_id}/qa`
-- `GET /api/courses/{course_id}/knowledge-model`
-- `POST /api/courses/{course_id}/knowledge-model/build`
-- `GET /api/courses/{course_id}/knowledge-model/build-status`
-- `POST /api/courses/{course_id}/knowledge-model/build-jobs`
-- `GET /api/courses/{course_id}/knowledge-nodes`
-- `GET /api/courses/{course_id}/knowledge-nodes/{node_id}`
-- `GET/POST /api/courses/{course_id}/materials/{material_id}/knowledge-extraction`
-- `GET/POST /api/courses/{course_id}/knowledge-canonicalization`
-- `GET/POST /api/courses/{course_id}/knowledge-relationships`
-- `GET /api/diagnostics/courses/{course_id}/readiness`
-- `POST /api/diagnostics/assessments`
-- `GET /api/diagnostics/assessments/{assessment_id}`
-- `POST /api/diagnostics/assessments/{assessment_id}/submit`
-- `GET /api/diagnostics/assessments/{assessment_id}/result`
-- `GET /api/courses/{course_id}/mastery`
-- `GET /api/courses/{course_id}/knowledge/{node_id}/mastery`
-- `GET /api/courses/{course_id}/knowledge/{node_id}/evidence`
-- `GET /api/courses/{course_id}/learning-plan`
-- `POST /api/courses/{course_id}/learning-plan/generate`
-- `POST /api/diagnostics/courses/{course_id}/questions/prepare`
-- `POST /api/learning/sessions`、`GET /api/learning/sessions/active`
-- `GET /api/learning/sessions/{session_id}`、`GET /api/learning/sessions/{session_id}/content`
-- `GET/POST /api/learning/sessions/{session_id}/tutor/messages`
-- `POST /api/learning/sessions/{session_id}/practice/next`
-- `PUT /api/learning/sessions/{session_id}/practice/responses/{assessment_question_id}`
-- `PATCH /api/learning/sessions/{session_id}/tasks/{phase}`
-- `POST /api/learning/sessions/{session_id}/complete`、`POST /api/learning/sessions/{session_id}/cancel`
-- `GET /api/courses/{course_id}/progress/overview`、`/knowledge`、`/trend`、`/history`、`/review-risk`
-
-请求参数、响应边界和错误码见 [API 总览](docs/API_OVERVIEW.md)。
-
-## M3 课程知识模型
-
-完整处理链为：
-
-```text
-M2 MaterialContent 与解析分段
-  → M3-B KnowledgeCandidate 与候选证据
-  → M3-C KnowledgeNode 与 KnowledgeSource
-  → M3-D CONTAINS / PREREQUISITE 与关系证据
-  → M3-E 学习概览、知识详情、层级树/关系图与可靠构建状态
-```
-
-- 所有实体、运行记录和来源均限制在当前 owner 的同一课程内；
-- 候选来源必须精确匹配真实解析分段，持久化摘录来自资料而非模型自由生成；
-- 归一化优先避免错误合并，并保留候选到规范节点的解析记录；
-- `CONTAINS` 被验证为允许多根的无环森林，`PREREQUISITE` 被独立验证为 DAG；
-- 同一输入快照会复用成功运行，失败的重新生成不会替换已发布模型；
-- 课程学习工作台只使用真实 canonical 节点和关系，不创建合成根节点，也不持久化布局坐标；
-- 构建任务状态和资料快照保存在数据库中，刷新页面后仍可恢复；更新失败会恢复并保留此前已发布的可用知识模型。
-
-`POST /api/courses/{course_id}/knowledge-model/build-jobs` 通过持久化任务按顺序编排既有 M3-B、M3-C、M3-D 服务，不引入新的推理算法。旧同步 `build` 接口继续保留兼容。
-
-## M4/M5 诊断与学生知识状态
-
-M4 的诊断题固定知识节点和历史题目快照，提交后使用已保存的确定性评分结果生成报告。M5 只读取这些不可变历史事实，幂等地产生 Learning Evidence，并据此计算可追溯的 Mastery 掌握度估计与独立的 Confidence；不会重新评分或改写原始回答、题目快照和历史成绩。
-
-课程知识地图可在课程结构与我的掌握状态之间切换。状态、证据数量、算法版本和证据解释均来自已持久化的 M5 数据；没有足够证据的节点保持待评估，不显示虚构的 0% 或 50%。
-
-## M6 推荐与学习计划
-
-推荐引擎使用 M5 掌握状态、课程知识结构和先修关系确定学习目标，并给出理由、优先级和受阻先修项。课程学习计划保存目标及 1–3 项有序任务；相同输入会复用现有计划，知识或掌握状态变化时旧计划会显示过期，显式重新生成后才会替换。首页和学习页读取同一份计划。
-
-计划区分个性化、初步与基础三个证据级别。没有诊断证据时，基础计划只依据真实课程知识结构选择先修起点；证据不足时不会伪造掌握度或学习进度。诊断页可显式补充待审核题目，并在新增资料后同步知识模型与题目缺口。
-
-## M7 学习会话与反馈
-
-从学习计划进入会话后，学习者可以按顺序阅读关联资料、使用带来源的 AI 导师、完成自适应练习，并在刷新或重启后恢复会话。导师支持提示、引导提问、例子、分步讲解和完整讲解；练习提交前会限制答案泄露，缺少有效来源时会明确提示证据不足。
-
-练习依据知识点难度设定题量，并根据答题表现调整难度；题库不足时可受控补充题目，自动检查的题目会明确标注未经人工核验。诊断支持题量不足时受控补充，并改进相似考查角度识别。练习可恢复、提前结束或在题目不足时保存结果。完成会话时，已评分练习转为可追溯的 Learning Evidence，刷新 Mastery 并保存学习总结；重复完成不会重复写入证据。推荐在结算后刷新，若刷新失败可单独重试。
-
-## M8 进展分析
-
-进展页按当前课程展示知识点掌握情况、覆盖率、真实历史趋势和已提交诊断及已完成学习会话。历史从开始记录快照时起展示，不补造此前数据；图结构或算法不兼容的历史点不会连成连续趋势。复习提示基于现有状态和练习时间的启发式规则，不等同经过验证的遗忘预测或自动推荐。
-
-## 质量检查
-
-后端：
-
-```bash
+~~~bash
 .venv/bin/python -m pytest
 .venv/bin/ruff check backend
-.venv/bin/ruff format --check backend
-```
+~~~
 
-前端：
+运行前端检查和生产构建：
 
-```bash
+~~~bash
 cd frontend
 npm run typecheck
 npm run lint
 npm run test
 npm run build
-```
+~~~
 
-M8 后续体验联合回归报告记录：后端 `485/485`、前端 `232/232` 测试通过，Ruff、TypeScript、ESLint、生产构建及隔离 SQLite 迁移检查通过；浏览器证据复用此前阶段记录。上述结果来自既有联合验收报告，进度梳理未重新运行测试。2026-11-02 用户确认 M8-5 已完成并采用 M8 最终验收通过、90% 作为 M9 起点；仓库中尚未找到独立的 M8-5 专项验收报告。
+测试不需要将真实密钥提交到仓库。使用模拟模型的测试结果不能代替真实外部模型调用验证。
 
 ## 项目结构
 
-```text
-learnpilot/
+~~~text
+LearnPilot/
 ├── backend/
-│   ├── alembic/                 # 0001 → … → 0019 数据库迁移
 │   ├── app/
-│   │   ├── ai/                  # provider/mock 适配与审计边界
-│   │   ├── api/                 # 课程、资料、知识模型接口
-│   │   ├── db/                  # 引擎、会话和 ORM 模型
-│   │   ├── documents/           # 文档解析
-│   │   ├── repositories/        # 持久化边界
-│   │   ├── services/            # 课程、AI、知识模型服务
-│   │   └── storage/             # 上传存储
-│   ├── scripts/                 # 显式旧数据导入工具
-│   └── tests/
-├── frontend/
-│   ├── src/                     # Vue 应用
-│   └── legacy/                  # 旧原生前端，仅供参考
-├── docs/
-│   ├── architecture/            # 各里程碑架构说明
-│   └── migration/               # 审计与实施报告
-├── alembic.ini
-├── pyproject.toml
-└── requirements.txt
-```
+│   │   ├── ai/              # 模型客户端与结构化输出
+│   │   ├── api/             # API 路由
+│   │   ├── db/              # 数据库会话与模型
+│   │   ├── documents/       # 文档解析
+│   │   ├── repositories/    # 数据访问
+│   │   ├── services/        # 业务逻辑
+│   │   └── storage/         # 文件存储
+│   ├── alembic/             # 数据库迁移
+│   └── tests/               # 后端测试
+├── frontend/                # Vue 应用、前端测试及构建配置
+├── demo_data/               # 预置课程及来源说明
+├── scripts/                 # 演示数据初始化和启动脚本
+├── docs/                    # API 和设计文档
+├── .env.example             # 本地环境变量模板
+└── requirements.txt         # Python 依赖
+~~~
 
-## 文档索引
+## 使用边界
 
-- [API 总览](docs/API_OVERVIEW.md)
-- [开发日志](docs/DEVELOPMENT_LOG.md)
-- [M1-A 数据基础](docs/architecture/M1A_DATA_FOUNDATION.md)
-- [M1-B 前端架构](docs/architecture/M1B_FRONTEND_ARCHITECTURE.md)
-- [M2 课程与资料架构](docs/architecture/M2_COURSE_MATERIAL_ARCHITECTURE.md)
-- [M3-A 知识模型基础](docs/architecture/M3A_KNOWLEDGE_MODEL_FOUNDATION.md)
-- [M3-B AI 知识抽取](docs/architecture/M3B_AI_KNOWLEDGE_EXTRACTION.md)
-- [M3-C 知识归一化](docs/architecture/M3C_KNOWLEDGE_CANONICALIZATION.md)
-- [M3-D 知识关系](docs/architecture/M3D_KNOWLEDGE_RELATIONSHIPS.md)
-- [M3-E 知识结构前端](docs/architecture/M3E_KNOWLEDGE_STRUCTURE_FRONTEND.md)
-- [M3-E 课程学习工作台](docs/architecture/M3E_KNOWLEDGE_WORKSPACE.md)
-- [M3-A 实施报告](docs/migration/M3A_IMPLEMENTATION_REPORT.md)
-- [M3-E 实施报告](docs/migration/M3E_IMPLEMENTATION_REPORT.md)
-- [M3 最终验收](docs/migration/M3_FINAL_ACCEPTANCE.md)
-- [M4 最终验收报告](docs/migration/M4_FINAL_ACCEPTANCE_REPORT.md)
-- [M5 Evidence 架构](docs/architecture/M5A_EVIDENCE_ARCHITECTURE.md)
-- [M5 Mastery 模型](docs/architecture/M5C_MASTERY_MODEL.md)
-- [M5 Knowledge Map 集成](docs/architecture/M5E_KNOWLEDGE_MAP_INTEGRATION.md)
-- [M5 FIX-1/FIX-2 报告](docs/migration/M5E_FIX1_FIX2_REPORT.md)
-- [M5 最终验收报告](docs/migration/M5_FINAL_ACCEPTANCE_REPORT.md)
-- [M6 推荐与学习计划架构](docs/architecture/M6_RECOMMENDATION_ARCHITECTURE.md)
-- [M6 实施与验收报告](docs/migration/M6_IMPLEMENTATION_REPORT.md)
-- [M6 体验完善报告](docs/migration/M6_UX_FIX_5_REPORT.md)
-- [M7 集成设计](docs/architecture/M7_INTEGRATION_DESIGN.md)
-- [M7 最终验收报告](docs/migration/M7_6_FINAL_ACCEPTANCE_REPORT.md)
-- [M8 进展分析架构](docs/architecture/M8_PROGRESS_ANALYTICS.md)
-- [M8 实施报告](docs/migration/M8_IMPLEMENTATION_REPORT.md)
-- [体验完善与联合回归](docs/migration/UX_FIX_FINAL_ACCEPTANCE.md)
-- [旧版比赛 Demo 脚本](docs/DEMO_SCRIPT.md)
-- [旧版 V0.1 验收清单](docs/V0.1_ACCEPTANCE.md)
+- 普通本地模式使用固定的演示用户上下文，不等同于完整的多用户身份认证；不要将该模式直接作为公开多用户服务部署。
+- 在线演示为体验准备，数据保存在服务端临时目录中，服务重启或休眠后可能丢失；不适合作为长期数据存储。
+- 预置知识结构和题库来自历史处理结果；后续模型结果具有不确定性，应核查内容与引用。
+- 项目依赖的第三方模型、网络和托管服务可能产生费用或出现不可用情况。部署前应配置访问控制、调用限制、数据持久化及备份。
 
-## 当前限制
-
-- 尚无正式登录/多用户会话；当前通过 bootstrap user 保持数据归属边界。
-- 仓库不包含真实模型密钥；真实 provider 验证依赖运行环境中的私有配置。
-- MySQL 8 目标部署尚未在本次本地验证中执行，当前自动化测试使用隔离 SQLite。
-- M3 的 provider 判断是受边界和来源校验约束的建议，不代表完整课程真理。
-- 知识图是辅助探索界面，不支持图编辑、坐标持久化、导出或完整键盘图遍历；层级树和知识列表提供主要的可访问浏览路径。
-- Mastery 是可解释的启发式掌握度估计，尚未进行教育测量学标定；没有已提交诊断或有效 Evidence 的课程会保持待评估状态。
-- 学习计划的任务时长是模板估计值；自适应练习依赖课程已有的已审核题目。
-- 掌握趋势仅覆盖已有快照；复习风险为启发式提示。历史重复证据未追溯清理，原始大资料故障及真实 provider 的相关质量与性能仍待验证。
-- 当前未启用 PPTX/OCR；MySQL 8 目标部署也尚未完成正式验收。
+更多接口信息见 [API 总览](docs/API_OVERVIEW.md)；实际请求参数以运行中的 API 文档为准。
