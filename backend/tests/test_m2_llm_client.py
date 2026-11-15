@@ -238,3 +238,80 @@ def test_explicit_mock_cards_use_only_real_source_labels() -> None:
     )
     assert all(card.source_reference == "PDF 第 3 页" for card in with_source.data.cards)
     assert all(card.source_reference is None for card in without_source.data.cards)
+
+
+def test_configured_output_limit_is_forwarded_to_provider(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: dict[str, object] = {}
+
+    def fake_urlopen(request: object, **kwargs: object) -> FakeResponse:
+        seen.update(json.loads(request.data))
+        return valid_response()
+
+    monkeypatch.setattr("backend.app.ai.client.urlopen", fake_urlopen)
+    client = make_client(max_attempts=1)
+    client.max_output_tokens = 512
+    client.generate_structured(operation="test", messages=[], schema=SmallOutput)
+    assert seen["max_tokens"] == 512
+
+
+def test_default_output_limit_preserves_provider_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: dict[str, object] = {}
+
+    def fake_urlopen(request: object, **kwargs: object) -> FakeResponse:
+        seen.update(json.loads(request.data))
+        return valid_response()
+
+    monkeypatch.setattr("backend.app.ai.client.urlopen", fake_urlopen)
+    make_client(max_attempts=1).generate_structured(operation="test", messages=[], schema=SmallOutput)
+    assert "max_tokens" not in seen
+
+
+
+@pytest.mark.parametrize(
+    ("finish_reason", "content", "expected"),
+    [
+        ("length", '{"answer":"PRIVATE-CANARY"}', "truncated"),
+        ("stop", "   ", "empty_or_missing_content"),
+        ("stop", "PRIVATE-CANARY", "content_not_json"),
+        ("stop", '{"answer":123,"other":"PRIVATE-CANARY"}', "schema_invalid"),
+    ],
+)
+def test_diagnostics_distinguish_output_failures_without_logging_content(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    finish_reason: str,
+    content: str,
+    expected: str,
+) -> None:
+    caplog.set_level("INFO", logger="backend.app.ai.client")
+    body = {
+        "choices": [{"finish_reason": finish_reason, "message": {"content": content}}],
+        "usage": {"prompt_tokens": 7, "completion_tokens": 9, "total_tokens": 16},
+    }
+    response = FakeResponse(json.dumps(body).encode())
+    response.headers = {"x-request-id": "request-123"}
+    monkeypatch.setattr("backend.app.ai.client.urlopen", lambda *args, **kwargs: response)
+    with pytest.raises(AIServiceError) as captured:
+        make_client(max_attempts=1).generate_structured(operation="test", messages=[], schema=SmallOutput)
+    assert captured.value.code == "AI_INVALID_OUTPUT"
+    assert f"reason={expected}" in caplog.text
+    assert "request-123" in caplog.text
+    assert "PRIVATE-CANARY" not in caplog.text
+    assert "test-canary-not-a-real-key" not in caplog.text
+    if expected == "schema_invalid":
+        assert "string_type" in caplog.text
+        assert "answer" in caplog.text
+
+
+
+def test_invalid_provider_response_does_not_log_untrusted_request_id(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    caplog.set_level("INFO", logger="backend.app.ai.client")
+    response = FakeResponse(b"invalid")
+    response.headers = {"x-request-id": "private-canary\nnot-a-safe-id"}
+    monkeypatch.setattr("backend.app.ai.client.urlopen", lambda *args, **kwargs: response)
+    with pytest.raises(AIServiceError):
+        make_client(max_attempts=1).generate_structured(operation="test", messages=[], schema=SmallOutput)
+    assert "reason=response_not_json" in caplog.text
+    assert "private-canary" not in caplog.text

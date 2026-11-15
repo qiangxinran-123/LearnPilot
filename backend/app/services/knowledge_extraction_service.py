@@ -140,7 +140,10 @@ class KnowledgeExtractionService:
     ) -> KnowledgeExtractionResult:
         ready = self._load_ready_material(course_id, material_id)
         try:
-            client = self.llm_client_factory(self.settings)
+            client_settings = self.settings.model_copy(
+                update={"llm_max_output_tokens": self.settings.knowledge_extraction_max_output_tokens}
+            )
+            client = self.llm_client_factory(client_settings)
         except AIServiceError as error:
             raise self._map_ai_error(error) from error
         provider, model = self._client_identity(client)
@@ -199,6 +202,7 @@ class KnowledgeExtractionService:
                     reused=False,
                 )
         except KnowledgeExtractionError as error:
+            logger.info("knowledge_extraction_diagnostic reason=business_constraint code=%s", error.code)
             self._mark_failed(run_id, error.code, error.message)
             raise
         except AIServiceError as error:

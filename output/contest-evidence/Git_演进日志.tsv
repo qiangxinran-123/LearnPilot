@@ -1,0 +1,35 @@
+commit	date	message
+61c96ac3266b402e39eef24691f55784c83f92a2	2026-09-10T00:05:20+08:00	init FastAPI backend
+3f65cfadf2011be0302f7a9e5cdb3c3a39766c23	2026-09-10T00:22:46+08:00	add basic API structure
+98a2ff99a8f170ec36dd70db466a3680cc973c63	2026-09-10T00:28:04+08:00	add mock course APIs
+bf631bdb25b9be8e132f16eadd8f570938bc3657	2026-09-10T00:43:18+08:00	add course response schemas
+f39db7f834820857527decd81eceb19dea30f7c0	2026-09-10T00:59:19+08:00	add material creation API
+cf2b3f1176652b718bdb311ce0dae2fef1532e90	2026-09-10T01:07:51+08:00	load course data from json
+17ae3a8eb65cc82197ce36eaac4d1a913e46485c	2026-09-10T01:46:28+08:00	Persist course materials in JSON
+5db74392902c492f470b39619b79d93e725b8c65	2026-09-10T01:58:41+08:00	add material file upload API
+26fc867aa97fe8eb4bfe74da9181a6e7924dc789	2026-09-10T02:09:33+08:00	add text extraction for uploaded materials
+2c8d5f86845260bf5f52303f0aeb3753cacb7817	2026-09-10T02:24:14+08:00	add mock AI summary API
+7a6e86fbba38426f721546b75d581370bb1a99b7	2026-09-10T02:28:42+08:00	add mock AI summary API
+ff9f36de13af18198193a9ac71babc2c750659d0	2026-09-10T14:05:49+08:00	add material search API
+5f62e8a9e989ce69cb59bd46b6be5dd3889ac72a	2026-09-10T14:20:36+08:00	add study card generation API
+d45373e4bb4a6086198263cdcd82a32f6c347c16	2026-09-10T14:34:05+08:00	add project documentation and demo materials
+6977c2c19e580b04cf91b5eac0e44edffcbee5d2	2026-09-10T15:29:22+08:00	prepare CampusAI v0.1 release
+a572caa897f1393b93449dc98af3d2b4d3f9953b	2026-09-10T15:41:06+08:00	polish Chinese-first project documentation
+205c0056ead95fcee1d093477ee5336152af37bb	2026-09-10T15:48:53+08:00	polish Chinese-first project documentation
+3fa99534824dffd47d2d3a8dc5ac207bf6a763a1	2026-09-10T16:26:26+08:00	add minimal frontend page
+201ddd05e93528c1ffee6018d7e88b3509da55ab	2026-09-10T17:01:16+08:00	polish frontend demo experience
+946eacbe7e89ace3d613335ef8e73de07c529475	2026-09-10T17:24:15+08:00	add demo data and startup guide
+cf7e54b26f113353cb07c6349bd739b796944dd8	2026-09-10T19:07:02+08:00	refactor frontend around learning workflow
+89fc797b1f635f043d31d53a422c49a48f4c2ac6	2026-10-02T15:07:22+08:00	feat: build LearnPilot V1 through M3-A
+9bd8dc5eb86ab23f7ea12e92089899db75910567	2026-10-09T20:29:19+08:00	feat: complete M3 course knowledge model
+1225bc59fd87ff34470f48a4f90ea4659f455a3b	2026-10-14T16:29:55+08:00	feat: complete M3 learning workspace
+c8202743f9c574119fae409472de2bdb8a168142	2026-10-14T16:40:23+08:00	Update LearnPilot description in README
+afc0dabb2f7df82eab54f1742adfcd6027aac0a6	2026-10-21T13:13:52+08:00	feat: complete M4 diagnostics and M5 mastery model
+0a21c38ae9f52a549d38a78c9fcc3852fe2871b5	2026-10-21T13:21:51+08:00	merge: integrate remote README update
+6e7bda340f3d4205e24e86a1bf91c57f0c8c70be	2026-10-24T23:57:43+08:00	feat: deliver M6 recommendations and learning plans
+3eeef14f482c3d70a65bc7e1147e83f59ace548d	2026-10-28T12:28:46+08:00	feat: deliver M7 learning sessions and adaptive practice
+bd1d47864626452996cc874c745e21a46a07298d	2026-10-28T13:02:02+08:00	M7阶段bug修复
+91c34e4c0597c82bab5a0a172cb8079fdcdac7ec	2026-10-29T18:43:40+08:00	M8-stage
+aa0ce2771e8e8bbc03fa485b8e3cb4131018fa9d	2026-11-02T11:21:42+08:00	feat: refine M8 progress and learning experience
+8236b7f3e1ebd9b8261995ade4b911f0bce33cea	2026-11-07T17:54:31+08:00	fix: improve M9 diagnostic and learning feedback
+b9f01fbbf6a4d1e3713e333287f7c6465065bd74	2026-11-13T19:08:03+08:00	feat: improve diagnostic and adaptive practice flows

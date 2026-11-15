@@ -48,6 +48,8 @@ class OpenAICompatibleLLMClient(LLMClient):
         self.model = settings.llm_model
         self.timeout_seconds = settings.llm_timeout_seconds
         self.max_attempts = settings.llm_max_attempts
+        self.max_output_tokens = settings.llm_max_output_tokens
+        self.online_demo_settings = settings if settings.online_demo_enabled else None
         # An evaluation client must never fall back to ordinary network access
         # if its execution context is lost (for example in another thread).
         self._evaluation_transport = active_evaluation_transport()
@@ -76,6 +78,8 @@ class OpenAICompatibleLLMClient(LLMClient):
             "temperature": 0.2,
             "response_format": {"type": "json_object"},
         }
+        if self.max_output_tokens is not None:
+            payload["max_tokens"] = self.max_output_tokens
         request = Request(
             self.endpoint,
             data=json.dumps(payload).encode("utf-8"),
@@ -93,24 +97,52 @@ class OpenAICompatibleLLMClient(LLMClient):
                 if self._evaluation_transport is not None and transport is not self._evaluation_transport:
                     raise RuntimeError("evaluation transport context missing or changed")
                 send = transport.open if transport is not None else urlopen
+                if self.online_demo_settings is not None:
+                    from backend.app.core.online_demo import reserve_model_call
+
+                    reserve_model_call(self.online_demo_settings)
                 with send(request, timeout=self.timeout_seconds) as response:
                     raw_body = response.read()
+                    headers = getattr(response, "headers", None)
+                    request_id = headers.get("x-request-id") if headers is not None else None
                 try:
                     body = json.loads(raw_body)
                 except (UnicodeDecodeError, json.JSONDecodeError) as error:
+                    metadata = self._diagnostic_metadata({}, request_id)
+                    self._log_diagnostic(operation, "response_not_json", **metadata)
                     raise AIServiceError("AI_INVALID_OUTPUT", "AI 服务未返回有效的 JSON。") from error
-                content = self._extract_content(body)
+                metadata = self._diagnostic_metadata(body, request_id)
+                if metadata["finish_reason"] == "length":
+                    self._log_diagnostic(operation, "truncated", **metadata)
+                    raise AIServiceError("AI_INVALID_OUTPUT", "AI 返回内容被输出长度限制截断。", retryable=True)
+                try:
+                    content = self._extract_content(body)
+                except AIServiceError:
+                    self._log_diagnostic(operation, "empty_or_missing_content", **metadata)
+                    raise
+                if not content.strip():
+                    self._log_diagnostic(operation, "empty_or_missing_content", **metadata)
+                    raise AIServiceError("AI_INVALID_OUTPUT", "AI 返回内容为空。", retryable=True)
+                try:
+                    json.loads(content)
+                except json.JSONDecodeError as error:
+                    self._log_diagnostic(operation, "content_not_json", **metadata)
+                    raise AIServiceError("AI_INVALID_OUTPUT", "AI 返回内容不是有效的 JSON。", retryable=True) from error
                 try:
                     result = schema.model_validate_json(content)
                 except ValidationError as error:
+                    fields = self._safe_validation_fields(schema, error)
+                    self._log_diagnostic(operation, "schema_invalid", validation_fields=fields, **metadata)
                     raise AIServiceError(
                         "AI_INVALID_OUTPUT",
                         "AI 返回结果不符合预期结构。",
                         retryable=True,
                     ) from error
+                self._log_diagnostic(operation, "ok", **metadata)
                 self._log(operation, started, True)
                 return GeneratedStructuredOutput(result, self.provider, self.model)
             except HTTPError as error:
+                self._log_diagnostic(operation, "api_http_error", http_status=error.code)
                 if error.code in {401, 403}:
                     code = "AI_AUTHENTICATION_FAILED"
                 elif error.code == 429:
@@ -120,8 +152,10 @@ class OpenAICompatibleLLMClient(LLMClient):
                 retryable = error.code == 429 or error.code >= 500
                 last_error = AIServiceError(code, "AI 服务暂时不可用，请稍后重试。", retryable=retryable)
             except TimeoutError, socket.timeout:
+                self._log_diagnostic(operation, "api_timeout")
                 last_error = AIServiceError("AI_TIMEOUT", "AI 请求超时，请稍后重试。", retryable=True)
             except URLError:
+                self._log_diagnostic(operation, "api_connection_error")
                 last_error = AIServiceError("AI_PROVIDER_ERROR", "无法连接 AI 服务，请稍后重试。", retryable=True)
             except AIServiceError as error:
                 last_error = error
@@ -147,6 +181,59 @@ class OpenAICompatibleLLMClient(LLMClient):
         if not isinstance(content, str):
             raise AIServiceError("AI_INVALID_OUTPUT", "AI 服务未返回可解析的结构化结果。")
         return content
+
+    @staticmethod
+    def _diagnostic_metadata(body: object, request_id: object) -> dict[str, object]:
+        data = body if isinstance(body, dict) else {}
+        choices = data.get("choices")
+        first = choices[0] if isinstance(choices, list) and choices and isinstance(choices[0], dict) else {}
+        finish_reason = first.get("finish_reason")
+        if not isinstance(finish_reason, str) or finish_reason not in {
+            "stop", "length", "content_filter", "tool_calls"
+        }:
+            finish_reason = None
+        usage = data.get("usage")
+        usage = usage if isinstance(usage, dict) else {}
+        counts = {
+            key: usage.get(key) if isinstance(usage.get(key), int) and 0 <= usage[key] <= 10000000 else None
+            for key in ("prompt_tokens", "completion_tokens", "total_tokens")
+        }
+        request_id = request_id or data.get("id")
+        safe_id = (
+            request_id
+            if isinstance(request_id, str) and re.fullmatch(r"[A-Za-z0-9._:-]{1,100}", request_id)
+            else None
+        )
+        return {"request_id": safe_id, "finish_reason": finish_reason, **counts}
+
+    @staticmethod
+    def _safe_validation_fields(schema: type[BaseModel], error: ValidationError) -> list[dict[str, object]]:
+        allowed: set[str] = set()
+
+        def visit(value: object) -> None:
+            if isinstance(value, dict):
+                properties = value.get("properties")
+                if isinstance(properties, dict):
+                    allowed.update(properties)
+                for item in value.values():
+                    visit(item)
+            elif isinstance(value, list):
+                for item in value:
+                    visit(item)
+
+        visit(schema.model_json_schema())
+        fields = []
+        for item in error.errors(include_input=False, include_url=False)[:8]:
+            location = [part if isinstance(part, int) or part in allowed else "?" for part in item["loc"]]
+            kind = item["type"] if re.fullmatch(r"[a-z0-9_]{1,64}", item["type"]) else "validation_error"
+            fields.append({"location": location, "type": kind})
+        return fields
+
+    def _log_diagnostic(self, operation: str, reason: str, **metadata: object) -> None:
+        logger.info(
+            "llm_diagnostic operation=%s model=%s reason=%s metadata=%s",
+            operation, self.model, reason, metadata,
+        )
 
     def _log(self, operation: str, started: float, success: bool) -> None:
         logger.info(

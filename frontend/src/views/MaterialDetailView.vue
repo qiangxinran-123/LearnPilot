@@ -331,7 +331,11 @@ watch(
               <div v-if="qaAnswer.references.length" class="qa-answer__references">
                 <span>参考资料</span>
                 <ul>
-                  <li v-for="reference in qaAnswer.references" :key="reference">{{ reference }}</li>
+                  <li v-for="reference in qaAnswer.references" :key="reference">
+                    <router-link :to="{ query: { ...route.query, tab: 'content', source: reference } }">
+                      {{ reference }}
+                    </router-link>
+                  </li>
                 </ul>
               </div>
             </article>

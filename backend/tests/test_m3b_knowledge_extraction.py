@@ -695,3 +695,26 @@ def test_structured_output_rejects_mismatch_and_large_batch() -> None:
         KnowledgeExtractionOutput.model_validate({"candidates": "not-a-list"})
     with pytest.raises(ValidationError):
         KnowledgeExtractionOutput.model_validate({"candidates": [candidate(f"Topic {index}") for index in range(21)]})
+
+
+
+def test_extraction_uses_its_own_output_cap(database) -> None:
+    factory, settings = database
+    settings = settings.model_copy(
+        update={"llm_max_output_tokens": 1024, "knowledge_extraction_max_output_tokens": 4096}
+    )
+    client = ScriptedClient([{"candidates": [candidate()]}])
+    seen: list[Settings] = []
+    with factory() as session:
+        seed = seed_data(session, settings)
+        service = make_service(session, settings, client)
+
+        def capture(config: Settings) -> LLMClient:
+            seen.append(config)
+            return client
+
+        service.llm_client_factory = capture
+        result = service.extract(seed.course_id, seed.material_id)
+        assert result.run.candidate_count == 1
+    assert seen[0].llm_max_output_tokens == 4096
+    assert settings.llm_max_output_tokens == 1024

@@ -187,7 +187,7 @@ describe('MaterialDetailView', () => {
       model: 'deterministic-m2',
       prompt_version: 'material_qa_v1',
     });
-    const { wrapper } = await mountDetail();
+    const { wrapper, router } = await mountDetail();
     await flushPromises();
 
     await wrapper.get('textarea').setValue('  缓存的用途是什么？  ');
@@ -198,6 +198,28 @@ describe('MaterialDetailView', () => {
     expect(wrapper.text()).toContain('缓存用于减少访问延迟。');
     expect(wrapper.text()).toContain('第 1 页');
     expect(wrapper.text()).toContain('回答来源：mock / deterministic-m2 · material_qa_v1');
+    const referenceLink = wrapper.get('.qa-answer__references a');
+    expect(referenceLink.text()).toBe('第 1 页');
+    await referenceLink.trigger('click');
+    await flushPromises();
+    expect(router.currentRoute.value.query).toMatchObject({ tab: 'content', source: '第 1 页' });
+    expect(wrapper.text()).toContain('当前资料页暂不支持精确定位');
+  });
+
+  it('shows a loading state and recovers when the AI request times out', async () => {
+    let rejectRequest: (reason: unknown) => void = () => {};
+    askQuestion.mockImplementation(() => new Promise((_, reject) => { rejectRequest = reject; }));
+    const { wrapper } = await mountDetail();
+    await flushPromises();
+
+    await wrapper.get('textarea').setValue('Cache?');
+    await wrapper.get('form').trigger('submit');
+    expect(wrapper.get('form button').classes()).toContain('is-loading');
+
+    rejectRequest(new ApiError('AI 服务请求超时，请稍后重试。', { code: 'AI_TIMEOUT', status: 503 }));
+    await flushPromises();
+    expect(wrapper.get('[role="alert"]').text()).toContain('超时');
+    expect(wrapper.get('form button').classes()).not.toContain('is-loading');
   });
 
   it('shows parse failure without requesting content or generating new AI artifacts', async () => {
