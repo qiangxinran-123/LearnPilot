@@ -9,7 +9,9 @@ LearnPilot 将课程资料转换为带原文来源的知识节点和先修关系
 - 在线演示：**待部署，尚无经过验证的地址**。当前共享身份缺少服务端隔离和调用预算控制，不能直接向多名评委公开。
 - 源码地址：[GitHub / LearnPilot](https://github.com/qiangxinran-123/LearnPilot)（来自本地 Git remote，评委访问权限未核实）。
 - [检查时的代码基线](https://github.com/qiangxinran-123/LearnPilot/commit/b9f01fbbf6a4d1e3713e333287f7c6465065bd74)：不包含此后未提交的工作区内容。
-- 视频：待补充。本地 API 文档：服务启动后访问 `http://127.0.0.1:18080/docs`；OpenAPI JSON 位于 `http://127.0.0.1:18080/openapi.json`。
+- 视频：已有 4 分 40 秒本地功能预览，正式比赛视频待完成和核对。已有技术文档 PDF 为 13 页，形成于本轮修复前，提交前须与最终代码复核。本地 API 文档：服务启动后访问 `http://127.0.0.1:18080/docs`；OpenAPI JSON 位于 `http://127.0.0.1:18080/openapi.json`。
+
+- AI 对话快照：见 `output/contest-evidence/README.md`；公开副本脱敏了本机用户目录，内部聊天链接不能保证评委访问。
 
 ## 本地预置课程快速体验
 
@@ -40,7 +42,7 @@ DEMO_BACKEND_PORT=18081 DEMO_FRONTEND_PORT=15174 bash scripts/start_demo.sh
 
 脚本检查端口、依赖、资料完整性、健康接口、数据库课程和首次诊断准备状态，并通过前端代理检查课程。缺失依赖时输出安装提示，不自动修改系统环境。
 
-**交付前提：** 检查取得的版本包含 `demo_data/`、`scripts/init_demo.py` 和 `scripts/start_demo.sh`；旧基线不包含这些文件。候选分支尚未推送，评委访问权限及完整干净机器依赖安装尚待验证。
+**交付前提：** 检查取得的版本包含 `demo_data/`、`scripts/init_demo.py` 和 `scripts/start_demo.sh`；旧基线不包含这些文件。候选分支 `codex/learnpilot-contest-p0` 尚未推送，评委访问权限待验证。本轮已从本地候选提交克隆到新目录，使用新虚拟环境、独立 npm 缓存和网络安装依赖并完成浏览器诊断；尚未在另一台计算机验证。
 
 ## 环境、配置与技术栈
 
@@ -124,5 +126,7 @@ VITE_BACKEND_ORIGIN=http://127.0.0.1:8000 npm run dev -- --host 127.0.0.1 --port
 - **AI 返回配置或服务错误：**核对私有 `.env` 的 provider、密钥、地址、模型、网络和服务商状态；不要把密钥写入日志。mock 与真实模型必须区分。
 - **没有题库或进展无掌握度：**空库需要准备并审核题库；首次诊断仅提供有限证据，更多独立学习证据可能是必要条件。
 - **Windows 原生环境：**命令采用 WSL/bash，PowerShell 原生流程尚未验证。
+
+在工作区可用 `git rev-parse HEAD` 查看实际提交。将候选分支推送并确认访问权限之前，GitHub 远程仓库不能作为本候选版下载地址。
 
 更多说明见 `demo_data/README.md`、`docs/API_OVERVIEW.md`、上轮记录 `output/CONTEST_ACCEPTANCE_20261115.md` 和本轮 `output/CONTEST_P0_REPORT_20261115.md`。
