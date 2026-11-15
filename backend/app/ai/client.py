@@ -49,6 +49,7 @@ class OpenAICompatibleLLMClient(LLMClient):
         self.timeout_seconds = settings.llm_timeout_seconds
         self.max_attempts = settings.llm_max_attempts
         self.max_output_tokens = settings.llm_max_output_tokens
+        self.online_demo_settings = settings if settings.online_demo_enabled else None
         # An evaluation client must never fall back to ordinary network access
         # if its execution context is lost (for example in another thread).
         self._evaluation_transport = active_evaluation_transport()
@@ -96,6 +97,10 @@ class OpenAICompatibleLLMClient(LLMClient):
                 if self._evaluation_transport is not None and transport is not self._evaluation_transport:
                     raise RuntimeError("evaluation transport context missing or changed")
                 send = transport.open if transport is not None else urlopen
+                if self.online_demo_settings is not None:
+                    from backend.app.core.online_demo import reserve_model_call
+
+                    reserve_model_call(self.online_demo_settings)
                 with send(request, timeout=self.timeout_seconds) as response:
                     raw_body = response.read()
                     headers = getattr(response, "headers", None)

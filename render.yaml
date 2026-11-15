@@ -1,0 +1,58 @@
+services:
+  - type: web
+    name: learnpilot-contest-demo
+    runtime: docker
+    plan: free
+    region: singapore
+    healthCheckPath: /health
+    envVars:
+      - key: ONLINE_DEMO_ENABLED
+        value: "true"
+      - key: ONLINE_DEMO_ROOT
+        value: /tmp/learnpilot-online
+      - key: ONLINE_DEMO_SECRET
+        generateValue: true
+      - key: ONLINE_DEMO_CONTROL_DATABASE_URL
+        fromDatabase:
+          name: learnpilot-demo-control
+          property: connectionString
+      - key: ONLINE_DEMO_REQUIRE_DURABLE_BUDGET
+        value: "true"
+      - key: ONLINE_DEMO_SECURE_COOKIE
+        value: "true"
+      - key: ONLINE_DEMO_MAX_SESSIONS
+        value: "30"
+      - key: ONLINE_DEMO_SESSION_CALL_LIMIT
+        value: "30"
+      - key: ONLINE_DEMO_GLOBAL_CALL_LIMIT
+        value: "300"
+      - key: ONLINE_DEMO_MODEL_CALLS_PER_MINUTE
+        value: "20"
+      - key: ONLINE_DEMO_REQUESTS_PER_MINUTE
+        value: "180"
+      - key: ONLINE_DEMO_SESSION_UPLOAD_BYTES
+        value: "52428800"
+      - key: ONLINE_DEMO_GLOBAL_UPLOAD_BYTES
+        value: "262144000"
+      - key: MAX_UPLOAD_BYTES
+        value: "5242880"
+      - key: LLM_MODE
+        value: provider
+      - key: LLM_API_KEY
+        sync: false
+      - key: LLM_BASE_URL
+        value: https://api.deepseek.com
+      - key: LLM_MODEL
+        value: deepseek-flash
+      - key: LLM_MAX_ATTEMPTS
+        value: "1"
+      - key: LLM_MAX_OUTPUT_TOKENS
+        value: "1024"
+      - key: KNOWLEDGE_EXTRACTION_MAX_OUTPUT_TOKENS
+        value: "4096"
+
+databases:
+  - name: learnpilot-demo-control
+    plan: free
+    region: singapore
+    ipAllowList: []

@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from functools import lru_cache
 from pathlib import Path
 
@@ -15,6 +18,21 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     legacy_bootstrap_user: str = "legacy-bootstrap@learnpilot.local"
     legacy_bootstrap_user_display_name: str = "Legacy CampusAI"
+
+    online_demo_enabled: bool = False
+    online_demo_root: Path | None = None
+    online_demo_secret: str = ""
+    online_demo_control_database_url: str = ""
+    online_demo_require_durable_budget: bool = False
+    online_demo_secure_cookie: bool = True
+    online_demo_max_sessions: int = Field(default=30, ge=1, le=500)
+    online_demo_session_call_limit: int = Field(default=30, ge=1, le=10000)
+    online_demo_global_call_limit: int = Field(default=300, ge=1, le=100000)
+    online_demo_model_calls_per_minute: int = Field(default=20, ge=1, le=1000)
+    online_demo_requests_per_minute: int = Field(default=180, ge=1, le=10000)
+    online_demo_session_upload_bytes: int = Field(default=50 * 1024 * 1024, ge=1)
+    online_demo_global_upload_bytes: int = Field(default=250 * 1024 * 1024, ge=1)
+    online_demo_session_id: str = ""
 
     llm_mode: str = "provider"
     llm_api_key: str = ""
@@ -55,6 +73,22 @@ class Settings(BaseSettings):
         return self.upload_root.resolve()
 
 
+_request_settings: ContextVar[Settings | None] = ContextVar("online_demo_settings", default=None)
+
+
 @lru_cache
-def get_settings() -> Settings:
+def get_base_settings() -> Settings:
     return Settings()
+
+
+def get_settings() -> Settings:
+    return _request_settings.get() or get_base_settings()
+
+
+@contextmanager
+def request_settings(settings: Settings) -> Iterator[None]:
+    token = _request_settings.set(settings)
+    try:
+        yield
+    finally:
+        _request_settings.reset(token)

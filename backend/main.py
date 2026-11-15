@@ -11,6 +11,7 @@ from backend.app.api.routes import router
 from backend.app.core.config import APP_DESCRIPTION, APP_NAME, APP_VERSION
 from backend.app.core.errors import install_exception_handlers
 from backend.app.core.logging import configure_logging
+from backend.app.core.online_demo import online_demo_middleware, validate_online_configuration
 from backend.app.core.settings import get_settings
 from backend.app.db.session import get_engine, reset_database_state
 from backend.app.web import mount_spa_static_files
@@ -24,8 +25,11 @@ async def lifespan(_: FastAPI):
     configure_logging(settings)
     logger.info("Application startup environment=%s", settings.app_env)
     try:
-        with get_engine().connect() as connection:
-            connection.execute(text("SELECT 1"))
+        if settings.online_demo_enabled:
+            validate_online_configuration(settings)
+        else:
+            with get_engine().connect() as connection:
+                connection.execute(text("SELECT 1"))
     except Exception:
         logger.exception("Database connection validation failed")
         reset_database_state()
@@ -41,6 +45,7 @@ app = FastAPI(
     version=APP_VERSION,
     lifespan=lifespan,
 )
+app.middleware("http")(online_demo_middleware)
 install_exception_handlers(app)
 app.include_router(router)
 
