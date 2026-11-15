@@ -301,3 +301,17 @@ def test_diagnostics_distinguish_output_failures_without_logging_content(
     if expected == "schema_invalid":
         assert "string_type" in caplog.text
         assert "answer" in caplog.text
+
+
+
+def test_invalid_provider_response_does_not_log_untrusted_request_id(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    caplog.set_level("INFO", logger="backend.app.ai.client")
+    response = FakeResponse(b"invalid")
+    response.headers = {"x-request-id": "private-canary\nnot-a-safe-id"}
+    monkeypatch.setattr("backend.app.ai.client.urlopen", lambda *args, **kwargs: response)
+    with pytest.raises(AIServiceError):
+        make_client(max_attempts=1).generate_structured(operation="test", messages=[], schema=SmallOutput)
+    assert "reason=response_not_json" in caplog.text
+    assert "private-canary" not in caplog.text

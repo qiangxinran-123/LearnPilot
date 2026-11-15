@@ -103,7 +103,8 @@ class OpenAICompatibleLLMClient(LLMClient):
                 try:
                     body = json.loads(raw_body)
                 except (UnicodeDecodeError, json.JSONDecodeError) as error:
-                    self._log_diagnostic(operation, "response_not_json", request_id=request_id)
+                    metadata = self._diagnostic_metadata({}, request_id)
+                    self._log_diagnostic(operation, "response_not_json", **metadata)
                     raise AIServiceError("AI_INVALID_OUTPUT", "AI 服务未返回有效的 JSON。") from error
                 metadata = self._diagnostic_metadata(body, request_id)
                 if metadata["finish_reason"] == "length":
